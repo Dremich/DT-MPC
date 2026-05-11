@@ -1,0 +1,11 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dt_mpc"
+version = "0.1.0"
+description = "Differentiable Tube-based MPC project"
+
+[tool.setuptools.packages.find]
+include = ["dynamics", "solvers", "learning"]

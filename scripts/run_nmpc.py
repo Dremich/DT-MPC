@@ -1,5 +1,6 @@
-"""Entry point for running DT-MPC training."""
+"""Example script for running Nominal MPC for a Dubins Car."""
 
+import numpy as np
 from dynamics.dubins_car import DubinsCar
 from dynamics.safety_embedded import SafetyEmbeddedDynamics
 from learning.doc_engine import DifferentiableOptimalControl
@@ -8,8 +9,8 @@ from solvers.optimal_control import DDPSolver
 
 
 def main() -> None:
-    """Instantiate the DT-MPC components and start training."""
-    raise NotImplementedError("Training entry point is not implemented yet.")
+    """Instantiate the nominal MPC components."""
+    NotImplementedError("Nominal MPC entry point is not implemented yet.")
 
 
 if __name__ == "__main__":

@@ -19,7 +19,7 @@ class RepoStructureTests(unittest.TestCase):
         self.assertEqual(car.state_dim, 3)
         self.assertEqual(car.control_dim, 2)
         with self.assertRaises(NotImplementedError):
-            car.step(np.zeros(3), np.zeros(2))
+            car.advance_state(np.zeros(3), np.zeros(2))
 
     def test_safety_embedded_dynamics_interface(self):
         dynamics = SafetyEmbeddedDynamics(DubinsCar(dt=0.1), {"gamma": 1.0, "alpha": 0.5})
