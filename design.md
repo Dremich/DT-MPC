@@ -68,7 +68,8 @@ class SafetyEmbeddedDynamics:
         pass
 ```
 
-3. solvers/optimal_control.pyContains the unconstrained optimal control solver (Differential Dynamic Programming - DDP) used to solve both the nominal and ancillary problems over the safety-embedded dynamics.
+3. solvers/optimal_control.py
+Contains the unconstrained optimal control solver (Differential Dynamic Programming - DDP) used to solve both the nominal and ancillary problems over the safety-embedded dynamics.
 
 ```
 import numpy as np
@@ -89,7 +90,8 @@ class DDPSolver:
         pass
 ```
 
-4. learning/doc_engine.pyImplements the Differentiable Optimal Control algorithms (1, 3, and 4) to compute the gradient of the upper-level loss with respect to the parameters $\theta$.Pythonimport numpy as np
+4. learning/doc_engine.py
+Implements the Differentiable Optimal Control algorithms (1, 3, and 4) to compute the gradient of the upper-level loss with respect to the parameters $\theta$.Pythonimport numpy as np
 
 class DifferentiableOptimalControl:
     def backward_pass(self, trajectory_data: dict, dynamics_derivs: dict) -> dict:
@@ -113,7 +115,8 @@ class DifferentiableOptimalControl:
         \"\"\"
         pass
 
-5. learning/dt_mpc_loop.pyThe main outer loop managing the interaction between the dynamics, solvers, and differentiation engine to update parameters.
+5. learning/dt_mpc_loop.py
+The main outer loop managing the interaction between the dynamics, solvers, and differentiation engine to update parameters.
 
 ```
 import numpy as np
