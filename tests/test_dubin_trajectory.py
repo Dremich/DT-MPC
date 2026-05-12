@@ -33,7 +33,7 @@ def run_open_loop_simulation():
         u_k = np.array([1.0, predetermined_steer[k]])
         
         # Step the physics forward using the stateless model
-        current_state = car.step(current_state, u_k, dt)
+        current_state = car.step(current_state, u_k, dt) 
         states_history.append(current_state)
         
     states_history = np.array(states_history)

@@ -28,7 +28,7 @@ class DynamicalSystem(ABC):
         """
         pass
 
-    def discrete_step(self, x: np.ndarray, u: np.ndarray, dt: float) -> np.ndarray:
+    def step(self, x: np.ndarray, u: np.ndarray, dt: float) -> np.ndarray:
         """
         Integrates the dynamics forward by one time step dt.
         (Euler integration provided as default, can be overridden with RK4).

@@ -9,6 +9,7 @@ dt_mpc_project/
 ├── dynamics/
 │   ├── __init__.py
 │   ├── base_system.py        # Base physical models (e.g., Dubins Car)
+│   ├── dubins_car.py         # Base physical models (e.g., Dubins Car)
 │   └── safety_embedded.py    # DBaS wrapper for augmented dynamics
 ├── solvers/
 │   ├── __init__.py

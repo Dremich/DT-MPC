@@ -13,3 +13,9 @@ Implementation of differentiable tube-based MPC controller based on the 2024 Rob
 ## Dependencies
 
 - `numpy==2.4.4`
+
+## Setup
+Before running the script, setup the repo using:
+
+cd DT-MPC
+pip install -e .
