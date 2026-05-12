@@ -5,11 +5,11 @@ from dynamics.base_system import DynamicalSystem
 # from solvers.costs import QuadraticCost # Assuming you make this later
 
 class DDPSolver:
-    def __init__(self, dynamics: DynamicalSystem, horizon: int, dt: float):
-        self.dynamics = dynamics
-        self.horizon = horizon
-        self.dt = dt
-        # self.cost = QuadraticCost(...) 
+    def __init__(self, control_problem: OCP):
+        self.dynamics = control_problem.dynamics
+        self.horizon = control_problem.horizon
+        self.dt = control_problem.dt
+        # self.cost = control_problem.QuadraticCost(...) 
 
     def solve(self, initial_state: np.ndarray, is_nominal: bool) -> dict:
         """

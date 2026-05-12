@@ -1,7 +1,13 @@
 import numpy as np
 from typing import Tuple
 
-class QuadraticCost:
+class BaseCost:
+    pass
+    # TODO: Implement this!
+
+
+# Unchecked
+class QuadraticCost(BaseCost):
     def __init__(self, Q: np.ndarray, R: np.ndarray):
         self.Q = Q
         self.R = R
