@@ -6,6 +6,10 @@ build-backend = "setuptools.build_meta"
 name = "dt_mpc"
 version = "0.1.0"
 description = "Differentiable Tube-based MPC project"
+dependencies = [
+    "numpy>=2.4.4",
+    "matplotlib",
+]
 
 [tool.setuptools.packages.find]
 include = ["dynamics", "solvers", "learning"]
