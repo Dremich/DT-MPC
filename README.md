@@ -19,3 +19,5 @@ Before running the script, setup the repo using:
 
 cd DT-MPC
 pip install -e .
+
+Need to add the conda environment as an exception to Windows Security > Virus & thread protection > Exceptions because of JAX.
