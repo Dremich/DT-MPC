@@ -3,6 +3,7 @@ pyproject.toml
 dt_mpc.egg-info/PKG-INFO
 dt_mpc.egg-info/SOURCES.txt
 dt_mpc.egg-info/dependency_links.txt
+dt_mpc.egg-info/requires.txt
 dt_mpc.egg-info/top_level.txt
 dynamics/__init__.py
 dynamics/base_system.py
@@ -13,6 +14,9 @@ learning/doc_engine.py
 learning/dt_mpc_loop.py
 solvers/__init__.py
 solvers/costs.py
+solvers/ocp_interface.py
 solvers/optimal_control.py
+solvers/test_ddp.py
+solvers/tube_mpc.py
 tests/test_dubin_trajectory.py
 tests/test_repo_structure.py
