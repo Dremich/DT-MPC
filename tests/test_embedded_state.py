@@ -22,19 +22,23 @@ def run_open_loop_simulation():
     # 3. Create a predetermined trajectory (e.g., drive straight, then turn left)
     # Control vector is 2D: [v, steering_rate]. Set constant forward velocity v=1.0
     horizon = 50
-    predetermined_steer = np.zeros(horizon)
-    predetermined_steer[20:40] = 0.5  # Turn left in the middle of the trajectory
     
     # 4. Simulation Loop
     states_history = [current_state]
     
     for k in range(horizon):
         # control = [v, steering_rate]
-        u_k = np.array([1.0, predetermined_steer[k]])
+
+        # P control for angular
+        omega = current_state[2] - np.pi/4  # Proportional control to reduce heading error (steering rate proportional to current heading)
+        u_k = np.array([2.0, -omega])
         
         # Step the physics forward using the stateless model
         current_state = car.step(current_state, u_k, dt) 
-        print(f"Step {k}: State = {current_state}")
+        # print(f"Step {k}: State = {current_state}") # Debug print to observe the state evolution: \
+        # you should see the barrier state (4th element) change as the car approaches obstacles.
+        if (current_state[3] > 10) or (current_state[3] < 0):  # If the barrier state indicates we're getting close to an obstacle
+            print(f"Warning: Approaching obstacle! Barrier state = {current_state[3]:.2f}")
         states_history.append(current_state)
         
     states_history = np.array(states_history)

@@ -17,6 +17,8 @@ class SafetyEmbeddedDynamics(DynamicalSystem):
         self._state_dim = 4                     # [x, y, theta, barrier_state]
         self._control_dim = 2                   # [v, omega]
         self.obstacles = obstacles              # Embedded barrier states depend on the obstacles in the environment 
+        self.limit_v = 1.0                        # Maximum linear velocity
+        self.limit_omega = np.pi / 4             # Maximum angular velocity (radians
 
         # TODO: Update abstract class to allow for passing system parameters in constructor
         if wheelbase is None:
@@ -58,6 +60,7 @@ class SafetyEmbeddedDynamics(DynamicalSystem):
         omega = u[1]
         theta = x[2]
 
+        # Add i.i.d Gaussian noise to dynamics.
         x_dot = v * np.cos(theta) + np.random.normal(0, 0.1)  # Add small noise for realism
         y_dot = v * np.sin(theta) + np.random.normal(0, 0.1)  # Add small noise for realism
         theta_dot = v / self.L * np.tan(omega) + np.random.normal(0, 0.1)  # Add small noise for realism
