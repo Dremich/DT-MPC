@@ -17,6 +17,7 @@ solvers/costs.py
 solvers/ocp_interface.py
 solvers/optimal_control.py
 solvers/tube_mpc.py
-tests/test_ddp.py
+tests/test_costs.py
 tests/test_dubin_trajectory.py
+tests/test_dubin_w_ddp.py
 tests/test_repo_structure.py

@@ -10,4 +10,4 @@ class OCP:
     stage_cost: BaseCost
     terminal_cost: BaseCost
     horizon: int
-    dt: int
+    dt: float

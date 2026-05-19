@@ -12,6 +12,7 @@ dependencies = [
     "matplotlib",
     "jax",
     "jaxlib",
+    "addcopyfighandler",
 ]
 
 [tool.setuptools.packages.find]
