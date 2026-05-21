@@ -1,52 +1,36 @@
 import numpy as np
+from typing import Optional
 from solvers.optimal_control import DDPSolver
-from solvers.ocp_interface import OCPFormulation
-
+from solvers.costs import BaseCost
+from solvers.ocp_interface import OCP
 class TubeMPC:
     def __init__(self, 
-                 nominal_problem: OCPFormulation, 
-                 ancillary_problem: OCPFormulation, 
+                 nominal_problem: OCP, 
+                 ancillary_problem: OCP, 
                  solver_engine: DDPSolver):
         
         self.nominal_problem = nominal_problem
         self.ancillary_problem = ancillary_problem
         self.solver = solver_engine
 
-    def nominal_mpc(self, current_state: np.ndarray) -> np.ndarray:
-        """
-        Solves the nominal mpc for the current state.
-        """
-        self.solver.load_problem(self.nominal_problem)
-        nominal_trajectory = self.solver.solve(current_state)
-        pass
-    
-    def ancillary_mpc(self, current_state: np.ndarray) -> np.ndarray:
-        """
-        Solves the ancillary mpc for the current state.
-        """
-        self.solver.load_problem(self.ancillary_problem)
-        safe_trajectory = self.solver.solve(current_state)
-        pass
+        # Holds previous control
+        # Optional because not required for initial step
+        self.previous_control: Optional[np.ndarray] = None
 
-    def tube_mpc(self, current_state: np.ndarray) -> np.ndarray:
-        """
-        Executes the Tube-MPC logic for a single timestep.
-        """
-        NotImplementedError("tube_mpc unimplemented")
+    def step_tube(self, current_state: np.ndarray) -> np.ndarray:
+        """Executes the Tube-MPC logic for a single timestep."""
         
-        # 1. Solve the Nominal Problem (The perfect world)
-        # The solver engine temporarily loads the nominal rules
-        self.nominal_mpc( ... )
-        
-        # 2. Update the Ancillary Problem to track the Nominal Trajectory
-        # (Update the stage cost here so the ancillary 
-        # controller knows where the center of the tube is)
-        
-        # something like
-        self.ancillary_problem.stage_cost.set_reference_trajectory(nominal_trajectory['states'])
+        # Solve the nominal problem
+        nominal_state, nominal_control = self.solver.run_ddp(self.nominal_problem, current_state, self.previous_control)
 
-        # 3. Solve the Ancillary Problem (The real, safe world)
-        self.ancillary_mpc( ... )
+        # Increment previous control
+        self.previous_control = np.roll(nominal_control, shift=-1, axis=0)
+        self.previous_control[-1] = nominal_control[-1] # maintains array size
 
-        # 4. Return the first action of the safe trajectory to apply to the plant
-        return safe_trajectory['controls'][0]
+        # Update ancillary cost for tracking
+        self.ancillary_problem.stage_cost.update_reference(nominal_state, nominal_control)
+
+        # Solve ancillary problem
+        ancillary_state, ancillary_control = self.solver.run_ddp(self.ancillary_problem, current_state)
+
+        return ancillary_control[0]

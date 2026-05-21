@@ -4,9 +4,9 @@ from typing import Tuple, Optional
 from abc import ABC, abstractmethod
 
 
-# =====================================================================
+# ==================================================================================================
 # Contains only cost function definitions and their derivatives. Dynamic derivitives are in Dynamics
-# =====================================================================
+# ==================================================================================================
 
 class BaseCost(ABC):
     """Abstract base class for cost functions"""
@@ -48,6 +48,13 @@ class BaseCost(ABC):
         l_uu = jax.hessian(self.evaluate, argnums=1)(x, u)
         l_xu = jax.jacobian(jax.grad(self.evaluate, argnums=0), argnums=1)(x, u)
         return l_x, l_u, l_xx, l_uu, l_xu
+    
+    def update_reference(self, x_ref: Optional[jnp.ndarray] = None, u_ref: Optional[jnp.ndarray] = None):
+        """ Updates the cost function with optional reference trajectory and control"""
+        if x_ref is not None:
+            self.x_ref = x_ref
+        if u_ref is not None:
+            self.u_ref = u_ref
 
 class QuadraticCost(BaseCost):
     """Stage cost with optional reference tracking"""
