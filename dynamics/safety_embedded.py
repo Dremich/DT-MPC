@@ -82,12 +82,12 @@ class SafetyEmbeddedDynamics(DynamicalSystem):
         omega = u[1]
         theta = x[2]
 
-        # Jacobian w.r.t state x
+        # Jacobian w.r.t,safe state x
         A = np.zeros((self.state_dim, self.state_dim))
         A[0, 2] = -v * np.sin(theta)  # df1/dtheta
         A[1, 2] = v * np.cos(theta)   # df2/dtheta
 
-        # Jacobian w.r.t control u
+        # Jacobian w.r.t,safe control u
         B = np.zeros((self.state_dim, self.control_dim))
         B[0, 0] = np.cos(theta)       # df1/dv
         B[1, 0] = np.sin(theta)       # df2/dv
