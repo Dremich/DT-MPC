@@ -1,6 +1,5 @@
 from dataclasses import dataclass
 from dynamics.base_system import DynamicalSystem
-# TODO: Implement a BaseCost class that Cost functions inherit from
 from solvers.costs import BaseCost 
 
 @dataclass
