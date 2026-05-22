@@ -37,8 +37,10 @@ def run_open_loop_simulation():
         current_state = car.step(current_state, u_k, dt) 
         # print(f"Step {k}: State = {current_state}") # Debug print to observe the state evolution: \
         # you should see the barrier state (4th element) change as the car approaches obstacles.
-        if (current_state[3] > 10) or (current_state[3] < 0):  # If the barrier state indicates we're getting close to an obstacle
-            print(f"Warning: Approaching obstacle! Barrier state = {current_state[3]:.2f}")
+        if (current_state[3] > 10):  # If the barrier state indicates we're getting close to an obstacle
+            print(f"Warning: Approaching obstacle! Step {k}: Barrier state = {current_state[3]:.2f}")
+        elif (current_state[3] < 0):
+            print(f"Warning: Exiting safe region! Step {k}: Barrier state = {current_state[3]:.2f}")
         states_history.append(current_state)
         
     states_history = np.array(states_history)
