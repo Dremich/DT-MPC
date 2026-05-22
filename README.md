@@ -21,3 +21,8 @@ cd DT-MPC
 pip install -e .
 
 Need to add the conda environment as an exception to Windows Security > Virus & thread protection > Exceptions because of JAX.
+## test the basic dubin scene
+python .\tests\test_dubin_trajectory.py
+
+## test the embedded state scene
+python .\tests\test_embedded_state.py

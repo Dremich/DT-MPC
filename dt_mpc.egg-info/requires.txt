@@ -2,3 +2,5 @@ numpy==2.4.4
 matplotlib
 jax
 jaxlib
+numpy>=2.4.4
+matplotlib

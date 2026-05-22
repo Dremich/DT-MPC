@@ -6,3 +6,5 @@ Requires-Dist: numpy==2.4.4
 Requires-Dist: matplotlib
 Requires-Dist: jax
 Requires-Dist: jaxlib
+Requires-Dist: numpy>=2.4.4
+Requires-Dist: matplotlib

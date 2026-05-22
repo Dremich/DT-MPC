@@ -1,4 +1,5 @@
-numpy==2.4.4
+numpy
 matplotlib
 jax
 jaxlib
+matplotlib
