@@ -1,34 +1,87 @@
-import numpy as np
-from typing import Tuple
-
-class BaseCost:
-    pass
-    # TODO: Implement this!
+import jax
+import jax.numpy as jnp
+from typing import Tuple, Optional
+from abc import ABC, abstractmethod
 
 
-# Unchecked
+# =====================================================================
+# Contains only cost function definitions and their derivatives. Dynamic derivitives are in Dynamics
+# =====================================================================
+
+class BaseCost(ABC):
+    """Abstract base class for cost functions"""
+
+    @abstractmethod
+    def evaluate(self, x: jnp.ndarray, u: Optional[jnp.ndarray] = None) -> jnp.ndarray:
+        """
+        Returns scalar cost at a given state and control.
+        
+        u required for stage costs, optional for terminal cost.
+        
+        Output is a scalar (0D array) representing the cost (using jnp array to maintain JAX compatibility).
+        """
+        pass
+
+    def get_derivatives(self, x: jnp.ndarray, u: Optional[jnp.ndarray] = None) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+        # Because we are using JAX, this method can be implemented in the base case
+        # Computing all necessary derivatives for DDP in one go is more efficient than separate calls
+        """
+        Returns the necessary derivatives for DDP as a tuple:
+
+        l_x: Gradient of stage cost w.r.t. state
+        l_u: Gradient of stage cost w.r.t. control
+        l_xx: Hessian of stage cost w.r.t. state
+        l_uu: Hessian of stage cost w.r.t. control
+        l_xu: Mixed partials of stage cost w.r.t. state and control
+        """
+        # Using JAX to compute gradients and hessians automatically
+        if u is None:
+            # Terminal cost case derivitives (x only, no control u)
+            phi_x = jax.grad(self.evaluate, argnums=0)(x)
+            phi_xx = jax.hessian(self.evaluate, argnums=0)(x)
+            return phi_x, None, phi_xx, None, None
+        
+        # State cost case
+        l_x = jax.grad(self.evaluate, argnums=0)(x, u)
+        l_u = jax.grad(self.evaluate, argnums=1)(x, u)
+        l_xx = jax.hessian(self.evaluate, argnums=0)(x, u)
+        l_uu = jax.hessian(self.evaluate, argnums=1)(x, u)
+        l_xu = jax.jacobian(jax.grad(self.evaluate, argnums=0), argnums=1)(x, u)
+        return l_x, l_u, l_xx, l_uu, l_xu
+
 class QuadraticCost(BaseCost):
-    def __init__(self, Q: np.ndarray, R: np.ndarray):
+    """Stage cost with optional reference tracking"""
+
+    def __init__(self, Q: jnp.ndarray, R: jnp.ndarray, x_ref: Optional[jnp.ndarray] = None, u_ref: Optional[jnp.ndarray] = None):
+        # All quadratic costs require Q and R
         self.Q = Q
         self.R = R
 
-    def stage_cost(self, x: np.ndarray, u: np.ndarray) -> float:
-        """The general l(x_k, u_k) from the paper."""
-        return x.T @ self.Q @ x + u.T @ self.R @ u
+        # For anscillary tube MPC controller, tracking is required as well
+        self.x_ref = x_ref if x_ref is not None else None
+        self.u_ref = u_ref if u_ref is not None else None
 
-    def stage_cost_derivatives(self, x: np.ndarray, u: np.ndarray):
-        """Returns l_x, l_u, l_xx, l_uu, l_xu for the DDP backward pass."""
-        l_x = 2 * self.Q @ x
-        l_u = 2 * self.R @ u
-        l_xx = 2 * self.Q
-        l_uu = 2 * self.R
-        l_xu = np.zeros((x.shape[0], u.shape[0]))
-        return l_x, l_u, l_xx, l_uu, l_xu
-    
-    def jacobian_dynamics(self, x: np.ndarray, u: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-        """Returns f_x, f_u for the DDP backward pass."""
-        raise NotImplementedError("QuadraticCost.jacobian_dynamics is not implemented yet.")
-    
-    def hessian_cost(self, x: np.ndarray, u: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Returns l_xx, l_uu, l_xu for the DDP backward pass."""
-        return NotImplementedError("QuadraticCost.hessian_cost is not implemented yet.")
+    def evaluate(self, x: jnp.ndarray, u: Optional[jnp.ndarray] = None) -> jnp.ndarray:
+        """
+        Computes the quadratic cost at a given state and control. 
+        
+        If reference provided, cost is computed on deviation from ref.
+        """
+        dx = x if self.x_ref is None else x - self.x_ref
+        du = u if self.u_ref is None else u - self.u_ref
+
+        return dx.T @ self.Q @ dx + du.T @ self.R @ du
+
+
+class TerminalCost(BaseCost):
+    """Terminal cost is applied only to the final state in horizon"""
+    def __init__(self, P: jnp.ndarray, x_ref: Optional[jnp.ndarray] = None):
+        self.P = P
+        self.x_ref = x_ref if x_ref is not None else None
+
+    def evaluate(self, x: jnp.ndarray, u: Optional[jnp.ndarray] = None) -> jnp.ndarray:
+        """Computes terminal cost at final state."""
+        dx = x if self.x_ref is None else x - self.x_ref
+
+        return dx.T @ self.P @ dx
+        

@@ -11,5 +11,15 @@ dependencies = [
     "matplotlib",
 ]
 
+dependencies = [
+    "numpy==2.4.4",
+    "matplotlib",
+    "jax",
+    "jaxlib",
+    "addcopyfighandler",
+]
+
 [tool.setuptools.packages.find]
 include = ["dynamics", "solvers", "learning"]
+
+
