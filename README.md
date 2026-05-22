@@ -19,3 +19,9 @@ Before running the script, setup the repo using:
 
 cd DT-MPC
 pip install -e .
+
+## test the basic dubin scene
+python .\tests\test_dubin_trajectory.py
+
+## test the embedded state scene
+python .\tests\test_embedded_state.py

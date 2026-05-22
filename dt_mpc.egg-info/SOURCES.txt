@@ -3,6 +3,7 @@ pyproject.toml
 dt_mpc.egg-info/PKG-INFO
 dt_mpc.egg-info/SOURCES.txt
 dt_mpc.egg-info/dependency_links.txt
+dt_mpc.egg-info/requires.txt
 dt_mpc.egg-info/top_level.txt
 dynamics/__init__.py
 dynamics/base_system.py
