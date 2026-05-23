@@ -1,72 +1,46 @@
 import numpy as np
-from typing import Optional, Dict
-
+from typing import Optional
 from solvers.optimal_control import DDPSolver
-from solvers.ocp_interface import OCPFormulation
-
-
+from solvers.costs import BaseCost
+from solvers.ocp_interface import OCP
 class TubeMPC:
-    """
-    Tube-based MPC controller.
-
-    Two OCPs are maintained:
-      nominal  – plans a trajectory in the disturbance-free world
-      ancillary – tracks the nominal trajectory, compensating for disturbances
-
-    Call tube_mpc(current_state) each control step to get the next action.
-    """
-
-    def __init__(
-        self,
-        nominal_problem: OCPFormulation,
-        ancillary_problem: OCPFormulation,
-        solver_engine: DDPSolver,
-    ) -> None:
-        self.nominal_problem  = nominal_problem
+    def __init__(self, 
+                 nominal_problem: OCP, 
+                 ancillary_problem: OCP, 
+                 solver_engine: DDPSolver):
+        
+        self.nominal_problem = nominal_problem
         self.ancillary_problem = ancillary_problem
         self.solver = solver_engine
         self._prev_nominal_control: Optional[np.ndarray] = None
 
-    # ---──────────────────────────────────────────────────────
+        # Holds previous control
+        # Optional because not required for initial step
+        self.previous_control: Optional[np.ndarray] = None
+        self.current_nominal_state: Optional[np.ndarray] = None
 
-    def nominal_mpc(self, current_state: np.ndarray) -> Dict:
-        """Solve the nominal (disturbance-free) OCP."""
-        self.solver.load_problem(self.nominal_problem)
-        return self.solver.solve(current_state, self._prev_nominal_control)
+    def step_tube(self, current_state: np.ndarray) -> np.ndarray:
+        """Executes the Tube-MPC logic for a single timestep."""
+        
+        # Initialize the nominal state to the true state only at t=0
+        if self.current_nominal_state is None:
+            self.current_nominal_state = np.copy(current_state)
 
-    def ancillary_mpc(self, current_state: np.ndarray) -> Dict:
-        """Solve the ancillary (tracking) OCP."""
-        self.solver.load_problem(self.ancillary_problem)
-        return self.solver.solve(current_state)
+        # Solve the nominal problem
+        nominal_state, nominal_control = self.solver.run_ddp(self.nominal_problem, self.current_nominal_state, self.previous_control)
 
-    # ---─────────────────────────────────────────────────
+        # Increment previous control
+        self.previous_control = np.roll(nominal_control, shift=-1, axis=0)
+        self.previous_control[-1] = nominal_control[-1] # maintains array size
 
-    def tube_mpc(self, current_state: np.ndarray) -> np.ndarray:
-        """
-        Executes one Tube-MPC step.
+        # Update ancillary cost for tracking
+        self.ancillary_problem.stage_cost.update_reference(nominal_state, nominal_control)
+        self.ancillary_problem.terminal_cost.update_reference(nominal_state[-1])
 
-        Returns the first control of the ancillary trajectory to apply to the plant.
-        """
-        # 1. Solve the nominal problem (perfect world)
-        nominal_result   = self.nominal_mpc(current_state)
-        nominal_states   = nominal_result["states"]    # (N+1, nx)
-        nominal_controls = nominal_result["controls"]  # (N,   nu)
+        # Solve ancillary problem
+        ancillary_state, ancillary_control = self.solver.run_ddp(self.ancillary_problem, current_state)
 
-        # Warm-start next nominal solve with a time-shifted control sequence
-        self._prev_nominal_control = np.roll(nominal_controls, shift=-1, axis=0)
-        self._prev_nominal_control[-1] = nominal_controls[-1]
+        # Use ideal dynamics to step nominal state forward for next iteration
+        self.current_nominal_state = nominal_state[1]
 
-        # 2. Update the ancillary stage cost to track the nominal trajectory
-        #    set_reference_trajectory stores the full (N+1, nx) state array and
-        #    (N, nu) control array; evaluate(x, u, k) will index x_ref[k] / u_ref[k]
-        self.ancillary_problem.stage_cost.set_reference_trajectory(
-            nominal_states, nominal_controls
-        )
-        # Point the ancillary terminal cost at the end of the nominal trajectory
-        self.ancillary_problem.terminal_cost.update_reference(nominal_states[-1])
-
-        # 3. Solve the ancillary problem (real, safe world)
-        safe_result = self.ancillary_mpc(current_state)
-
-        # 4. Return the first ancillary control action
-        return safe_result["controls"][0]
+        return ancillary_control[0]
