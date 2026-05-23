@@ -1,8 +1,9 @@
 import jax
 import jax.numpy as jnp
-from typing import Tuple, Optional
 from abc import ABC, abstractmethod
+from typing import Optional, Tuple
 
+jax.config.update("jax_enable_x64", True)
 
 # ==================================================================================================
 # Contains only cost function definitions and their derivatives. Dynamic derivitives are in Dynamics

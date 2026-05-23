@@ -12,6 +12,7 @@ class TubeMPC:
         self.nominal_problem = nominal_problem
         self.ancillary_problem = ancillary_problem
         self.solver = solver_engine
+        self._prev_nominal_control: Optional[np.ndarray] = None
 
         # Holds previous control
         # Optional because not required for initial step
