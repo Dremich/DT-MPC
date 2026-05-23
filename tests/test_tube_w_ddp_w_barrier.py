@@ -15,15 +15,29 @@ from solvers.costs import QuadraticCost, TerminalCost
 dt = 0.1
 wheelbase = 0.25
 horizon = 50
-steps = 100
+steps = 300 # Increased for larger course
 
 # Establish environment 
+# --- Original Course (Commented Out) ---
+# obstacles = np.array([
+#     [5.0, 5.0, 1.0],
+#     [3.0, 7.0, 1.0],
+#     [7.0, 3.0, 1.0],
+#     # Top-left obstacle
+#     [1.0, 9.0, 1.0],])
+# goal_state = np.array([10.0, 10.0, 0.0, 0.0]) 
+
+# --- Challenging "Forest" Course ---
 obstacles = np.array([
-    [5.0, 5.0, 1.0],
-    [3.0, 7.0, 1.0],
-    [7.0, 3.0, 1.0],
-    # Top-left obstacle
-    [1.0, 9.0, 1.0],])
+    [5.0, 2.0, 1.0], [3.0, 6.0, 1.2], [7.0, 8.0, 1.5],
+    [10.0, 4.0, 1.0], [12.0, 10.0, 1.5], [15.0, 7.0, 1.0],
+    [8.0, 15.0, 1.8], [5.0, 12.0, 1.0], [12.0, 18.0, 1.2],
+    [18.0, 12.0, 1.5], [20.0, 5.0, 1.5], [22.0, 15.0, 1.2],
+    [16.0, 22.0, 1.5], [10.0, 25.0, 1.8], [25.0, 10.0, 1.2],
+    [20.0, 25.0, 1.5], [25.0, 20.0, 1.2], [5.0, 20.0, 1.0]
+])
+goal_state = np.array([28.0, 28.0, 0.0, 0.0]) # x, y, theta, barrier_state
+# ------------------------------------
 
 car = SafetyEmbeddedDynamics(wheelbase, obstacles)
 
@@ -31,7 +45,6 @@ car = SafetyEmbeddedDynamics(wheelbase, obstacles)
 init_cbf = float(car.CBF(jnp.array([0.0, 0.0])))
 initial_barrier = 1.0 / init_cbf if init_cbf > 1e-6 else 1e6
 current_state = np.array([0.0, 0.0, 0.0, initial_barrier]) # x, y, theta, barrier_state
-goal_state = np.array([10.0, 10.0, 0.0, 0.0]) # x, y, theta, barrier_state
 
 # Nominal MPC (Goal-Seeking & Obstacle Avoidance)
 # The 4th diagonal element penalizes the barrier state

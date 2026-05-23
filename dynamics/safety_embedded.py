@@ -35,8 +35,9 @@ class SafetyEmbeddedDynamics(DynamicalSystem):
             self._obs = None
 
         # Cache JAX transformations for the discrete step
-        self._jac_A = jax.jacobian(self.step, argnums=0)
-        self._jac_B = jax.jacobian(self.step, argnums=1)
+        self._step_jit = jax.jit(self.step)
+        self._jac_A = jax.jit(jax.jacobian(self.step, argnums=0))
+        self._jac_B = jax.jit(jax.jacobian(self.step, argnums=1))
 
     # ---───────────────────────────────────────────────────────
 
