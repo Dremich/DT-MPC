@@ -34,6 +34,10 @@ class SafetyEmbeddedDynamics(DynamicalSystem):
         else:
             self._obs = None
 
+        # Cache JAX transformations for the discrete step
+        self._jac_A = jax.jacobian(self.step, argnums=0)
+        self._jac_B = jax.jacobian(self.step, argnums=1)
+
     # ---───────────────────────────────────────────────────────
 
     @property
@@ -130,8 +134,8 @@ class SafetyEmbeddedDynamics(DynamicalSystem):
         Captures the barrier-state update that the analytic continuous
         Jacobians miss.
         """
-        A_d = jax.jacobian(lambda x_: self.step(x_, u, dt))(x)
-        B_d = jax.jacobian(lambda u_: self.step(x, u_, dt))(u)
+        A_d = self._jac_A(x, u, dt)
+        B_d = self._jac_B(x, u, dt)
         return A_d, B_d
 
 

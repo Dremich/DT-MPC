@@ -38,17 +38,15 @@ class BaseCost(ABC):
         """
         # Using JAX to compute gradients and hessians automatically
         if u is None:
-            # Terminal cost case derivitives (x only, no control u)
-            phi_x = jax.grad(self.evaluate, argnums=0)(x, None, k)
-            phi_xx = jax.hessian(self.evaluate, argnums=0)(x, None, k)
+            phi_x = self._grad_x(x, None, k)
+            phi_xx = self._hess_x(x, None, k)
             return phi_x, None, phi_xx, None, None
         
-        # State cost case
-        l_x = jax.grad(self.evaluate, argnums=0)(x, u, k)
-        l_u = jax.grad(self.evaluate, argnums=1)(x, u, k)
-        l_xx = jnp.atleast_2d(jax.hessian(self.evaluate, argnums=0)(x, u, k))
-        l_uu = jnp.atleast_2d(jax.hessian(self.evaluate, argnums=1)(x, u, k))
-        l_xu = jnp.atleast_2d(jax.jacobian(jax.grad(self.evaluate, argnums=0), argnums=1)(x, u, k))
+        l_x = self._grad_x(x, u, k)
+        l_u = self._grad_u(x, u, k)
+        l_xx = jnp.atleast_2d(self._hess_x(x, u, k))
+        l_uu = jnp.atleast_2d(self._hess_u(x, u, k))
+        l_xu = jnp.atleast_2d(self._hess_xu(x, u, k))
         return l_x, l_u, l_xx, l_uu, l_xu
     
     def update_reference(self, x_ref: Optional[jnp.ndarray] = None, u_ref: Optional[jnp.ndarray] = None):
@@ -69,6 +67,13 @@ class QuadraticCost(BaseCost):
         # For anscillary tube MPC controller, tracking is required as well
         self.x_ref = x_ref if x_ref is not None else None
         self.u_ref = u_ref if u_ref is not None else None
+
+        # Cache JAX transformations
+        self._grad_x = jax.grad(self.evaluate, argnums=0)
+        self._grad_u = jax.grad(self.evaluate, argnums=1)
+        self._hess_x = jax.hessian(self.evaluate, argnums=0)
+        self._hess_u = jax.hessian(self.evaluate, argnums=1)
+        self._hess_xu = jax.jacobian(jax.grad(self.evaluate, argnums=0), argnums=1)
 
     def evaluate(self, x: jnp.ndarray, u: Optional[jnp.ndarray] = None, k: Optional[int] = None) -> jnp.ndarray:
         """
@@ -97,6 +102,10 @@ class TerminalCost(BaseCost):
     def __init__(self, P: jnp.ndarray, x_ref: Optional[jnp.ndarray] = None):
         self.P = P
         self.x_ref = x_ref if x_ref is not None else None
+
+        # Cache JAX transformations
+        self._grad_x = jax.grad(self.evaluate, argnums=0)
+        self._hess_x = jax.hessian(self.evaluate, argnums=0)
 
     def evaluate(self, x: jnp.ndarray, u: Optional[jnp.ndarray] = None, k: Optional[int] = None) -> jnp.ndarray:
         """Computes terminal cost at final state."""
