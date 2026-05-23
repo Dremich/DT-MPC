@@ -26,7 +26,11 @@ obstacles = np.array([
     [1.0, 9.0, 1.0],])
 
 car = SafetyEmbeddedDynamics(wheelbase, obstacles)
-current_state = np.array([0.0, 0.0, 0.0, 0.0]) # x, y, theta, barrier_state
+
+# Initialize correct starting barrier state[cite: 13]
+init_cbf = float(car.CBF(jnp.array([0.0, 0.0])))
+initial_barrier = 1.0 / init_cbf if init_cbf > 1e-6 else 1e6
+current_state = np.array([0.0, 0.0, 0.0, initial_barrier]) # x, y, theta, barrier_state
 goal_state = np.array([10.0, 10.0, 0.0, 0.0]) # x, y, theta, barrier_state
 
 # Nominal MPC (Goal-Seeking & Obstacle Avoidance)
@@ -56,17 +60,21 @@ ancillary_ocp = OCP(system=car, stage_cost=anc_stage_cost, terminal_cost=anc_ter
 controller = TubeMPC(nominal_ocp, ancillary_ocp, DDPSolver)
 
 # Simulation loop
-states = [current_state] # Track states for visualization
+states = [current_state.copy()] # Track states for visualization
+nom_states = [] # Track nominal states for dual visualization[cite: 13]
 
 for k in range(steps):
     print(f"Step {k}: Computing OCP...")
 
     # Obtain control from Tube MPC
     u = controller.step_tube(current_state)
+    
+    # Store nominal state[cite: 17]
+    nom_states.append(controller.current_nominal_state.copy())
 
-    # Progress physics
-    current_state = car.step(current_state, u, dt)
-    states.append(current_state)
+    # Progress physics using the noisy simulator step[cite: 13]
+    current_state = car.step_sim(current_state, u, dt)
+    states.append(current_state.copy())
 
     # Early stopping if goal is reached
     if np.linalg.norm(current_state[0:2] - goal_state[0:2]) < 0.5:
@@ -75,5 +83,12 @@ for k in range(steps):
 
 # Visualize results
 states = np.array(states)
+nom_states = np.array(nom_states)
 
-SafetyEmbeddedVisualizer.visualize_trajectory(states, obstacles, goal_state[0:2], 0.5)
+SafetyEmbeddedVisualizer.visualize_trajectory(
+    states,
+    obstacles, 
+    goal_state[0:2], 
+    0.5,
+    nominal_trajectory=nom_states # Pass nominal trajectory overlay[cite: 13]
+)
