@@ -22,7 +22,7 @@ class DDPSolver:
             xvec[k+1] = ocp.system.step(xvec[k], uvec[k], ocp.dt)
 
         old_cost = ocp.terminal_cost.evaluate(xvec[-1])
-        old_cost += sum(ocp.stage_cost.evaluate(xvec[k], uvec[k]) for k in range(ocp.horizon))            
+        old_cost += sum(ocp.stage_cost.evaluate(xvec[k], uvec[k], k) for k in range(ocp.horizon))            
         
         # DDP Core Loop
         for _ in range(max_iters):
@@ -40,7 +40,7 @@ class DDPSolver:
                 # Local linearization of the problem
                 A, B = ocp.system.discrete_jacobians(xk, uk, ocp.dt)
                 
-                cx, cu, cxx, cuu, cxu = ocp.stage_cost.get_derivatives(xk, uk)
+                cx, cu, cxx, cuu, cxu = ocp.stage_cost.get_derivatives(xk, uk, k)
                 
                 # Build Q functions
                 Qx = cx + A.T @ Vx
@@ -80,7 +80,7 @@ class DDPSolver:
                     
                     # Simulate physics
                     x_new[k+1] = ocp.system.step(x_new[k], u_new[k], ocp.dt)
-                    cost += ocp.stage_cost.evaluate(x_new[k], u_new[k])
+                    cost += ocp.stage_cost.evaluate(x_new[k], u_new[k], k)
                 
                 cost += ocp.terminal_cost.evaluate(x_new[-1])
                 

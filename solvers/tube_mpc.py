@@ -16,12 +16,17 @@ class TubeMPC:
         # Holds previous control
         # Optional because not required for initial step
         self.previous_control: Optional[np.ndarray] = None
+        self.current_nominal_state: Optional[np.ndarray] = None
 
     def step_tube(self, current_state: np.ndarray) -> np.ndarray:
         """Executes the Tube-MPC logic for a single timestep."""
         
+        # Initialize the nominal state to the true state only at t=0
+        if self.current_nominal_state is None:
+            self.current_nominal_state = np.copy(current_state)
+
         # Solve the nominal problem
-        nominal_state, nominal_control = self.solver.run_ddp(self.nominal_problem, current_state, self.previous_control)
+        nominal_state, nominal_control = self.solver.run_ddp(self.nominal_problem, self.current_nominal_state, self.previous_control)
 
         # Increment previous control
         self.previous_control = np.roll(nominal_control, shift=-1, axis=0)
@@ -29,8 +34,12 @@ class TubeMPC:
 
         # Update ancillary cost for tracking
         self.ancillary_problem.stage_cost.update_reference(nominal_state, nominal_control)
+        self.ancillary_problem.terminal_cost.update_reference(nominal_state[-1])
 
         # Solve ancillary problem
         ancillary_state, ancillary_control = self.solver.run_ddp(self.ancillary_problem, current_state)
+
+        # Use ideal dynamics to step nominal state forward for next iteration
+        self.current_nominal_state = nominal_state[1]
 
         return ancillary_control[0]
