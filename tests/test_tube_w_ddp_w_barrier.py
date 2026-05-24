@@ -1,3 +1,4 @@
+import time
 import numpy as np
 import jax.numpy as jnp
 
@@ -20,7 +21,7 @@ steps = 300 # Increased for larger course
 # Establish environment 
 # --- Original Course (Commented Out) ---
 # obstacles = np.array([
-#     [5.0, 5.0, 1.0],
+#     [5.0, 5.0, 2.0],
 #     [3.0, 7.0, 1.0],
 #     [7.0, 3.0, 1.0],
 #     # Top-left obstacle
@@ -31,10 +32,10 @@ steps = 300 # Increased for larger course
 obstacles = np.array([
     [5.0, 2.0, 1.0], [3.0, 6.0, 1.2], [7.0, 8.0, 1.5],
     [10.0, 4.0, 1.0], [12.0, 10.0, 1.5], [15.0, 7.0, 1.0],
-    [8.0, 15.0, 1.8], [5.0, 12.0, 1.0], [12.0, 18.0, 1.2],
+    [8.0, 15.0, 1.8], [5.0, 12.0, 2.0], [12.0, 18.0, 2.2],
     [18.0, 12.0, 1.5], [20.0, 5.0, 1.5], [22.0, 15.0, 1.2],
-    [16.0, 22.0, 1.5], [10.0, 25.0, 1.8], [25.0, 10.0, 1.2],
-    [20.0, 25.0, 1.5], [25.0, 20.0, 1.2], [5.0, 20.0, 1.0]
+    [16.0, 22.0, 2.5], [10.0, 25.0, 1.8], [25.0, 10.0, 3.2],
+    [20.0, 25.0, 1.5], [25.0, 20.0, 1.2], [5.0, 20.0, 2.0]
 ])
 goal_state = np.array([28.0, 28.0, 0.0, 0.0]) # x, y, theta, barrier_state
 # ------------------------------------
@@ -48,7 +49,7 @@ current_state = np.array([0.0, 0.0, 0.0, initial_barrier]) # x, y, theta, barrie
 
 # Nominal MPC (Goal-Seeking & Obstacle Avoidance)
 # The 4th diagonal element penalizes the barrier state
-Q_nom = jnp.diag(jnp.array([1.0, 1.0, 0.5, 50.0]))
+Q_nom = jnp.diag(jnp.array([1.0, 1.0, 0.5, 100.0]))
 R_nom = jnp.diag(jnp.array([0.1, 0.1]))
 P_nom = jnp.diag(jnp.array([100.0, 100.0, 50.0, 100.0]))
 
@@ -74,20 +75,39 @@ controller = TubeMPC(nominal_ocp, ancillary_ocp, DDPSolver)
 
 # Simulation loop
 states = [current_state.copy()] # Track states for visualization
+controls = [] # Track controls for analysis
 nom_states = [] # Track nominal states for dual visualization[cite: 13]
+# Timing accumulators
+start_time = time.perf_counter()
+controller_time = 0.0
+sim_time = 0.0
+step_times = []
 
 for k in range(steps):
     print(f"Step {k}: Computing OCP...")
 
+    step_start = time.perf_counter()
+
     # Obtain control from Tube MPC
+    t0 = time.perf_counter()
     u = controller.step_tube(current_state)
+    t1 = time.perf_counter()
+    controller_time += (t1 - t0)
     
     # Store nominal state[cite: 17]
     nom_states.append(controller.current_nominal_state.copy())
 
     # Progress physics using the noisy simulator step[cite: 13]
+    t2 = time.perf_counter()
     current_state = car.step_sim(current_state, u, dt)
+    t3 = time.perf_counter()
+    sim_time += (t3 - t2)
+
+    step_end = time.perf_counter()
+    step_times.append(step_end - step_start)
+
     states.append(current_state.copy())
+    controls.append(u.copy())
 
     # Early stopping if goal is reached
     if np.linalg.norm(current_state[0:2] - goal_state[0:2]) < 0.5:
@@ -105,3 +125,15 @@ SafetyEmbeddedVisualizer.visualize_trajectory(
     0.5,
     nominal_trajectory=nom_states # Pass nominal trajectory overlay[cite: 13]
 )
+
+# Print timing summary
+total_elapsed = time.perf_counter() - start_time
+n_steps = len(controls)
+print("\n--- Timing Summary ---")
+print(f"Total elapsed time: {total_elapsed:.6f} s")
+if n_steps > 0:
+    print(f"Steps executed: {n_steps}")
+    print(f"Average time per step: {total_elapsed / n_steps:.6f} s")
+    print(f"Average controller time per step: {controller_time / n_steps:.6f} s")
+    print(f"Average simulator time per step: {sim_time / n_steps:.6f} s")
+    print(f"Average loop overhead per step: {(sum(step_times) - controller_time - sim_time) / n_steps:.6f} s")

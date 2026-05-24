@@ -21,7 +21,7 @@ class SafetyEmbeddedDynamics(DynamicalSystem):
     step_sim()  – NumPy, adds Gaussian process noise; used for closed-loop simulation.
     """
 
-    def __init__(self, wheelbase: float = 1.0, obstacles=None, noise_std: float = 0.05):
+    def __init__(self, wheelbase: float = 1.0, obstacles=None, noise_std: float = 0.25):
         self._state_dim   = 4   # [x, y, theta, barrier_state]
         self._control_dim = 2   # [v, omega]
         self.L            = wheelbase if wheelbase is not None else 0.25
@@ -190,5 +190,53 @@ class SafetyEmbeddedVisualizer:
         ax.grid(True, alpha=0.3)
         ax.legend()
         ax.set_title("Safety-Embedded Dubins Car Trajectory")
+        plt.tight_layout()
+        plt.show()
+
+    @staticmethod
+    def visualize_multiple_trajectories(
+        trajectories,
+        obstacles,
+        goal=None,
+        goal_radius: float = 0.25,
+        figsize=(8, 8),
+        nominal_trajectories=None,
+    ) -> None:
+        import matplotlib.pyplot as plt
+        from matplotlib.patches import Circle
+        from matplotlib.cm import get_cmap
+
+        _, ax = plt.subplots(figsize=figsize)
+        ax.set_aspect("equal")
+
+        cmap = get_cmap("tab10")
+        n = len(trajectories)
+
+        for i, traj in enumerate(trajectories):
+            traj = np.asarray(traj)
+            if traj.size == 0:
+                continue
+            color = cmap(i % 10)
+            ax.plot(traj[:, 0], traj[:, 1], "-", color=color, linewidth=1.5, alpha=0.8, label=f"Run {i + 1}")
+            ax.plot(traj[0, 0], traj[0, 1], "o", color=color, markersize=6)
+            ax.plot(traj[-1, 0], traj[-1, 1], "s", color=color, markersize=6)
+
+            if nominal_trajectories is not None and i < len(nominal_trajectories):
+                nom = np.asarray(nominal_trajectories[i])
+                if nom.size > 0:
+                    ax.plot(nom[:, 0], nom[:, 1], "--", color=color, linewidth=1.0, alpha=0.4)
+
+        for obs in np.asarray(obstacles):
+            ax.add_patch(Circle((obs[0], obs[1]), obs[2], color="red", alpha=0.4))
+
+        if goal is not None:
+            ax.add_patch(Circle((goal[0], goal[1]), goal_radius, color="green", alpha=0.4))
+            ax.plot(goal[0], goal[1], "g*", markersize=12, label="Goal")
+
+        ax.set_xlabel("x")
+        ax.set_ylabel("y")
+        ax.grid(True, alpha=0.3)
+        ax.legend()
+        ax.set_title(f"Safety-Embedded Dubins Car — {n} Runs")
         plt.tight_layout()
         plt.show()
