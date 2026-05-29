@@ -75,13 +75,16 @@ class DDPSolver:
                 x_new[0] = initial_state
                 cost = 0.0
                     
+                # Use faster JITed step if available
+                step_func = ocp.system.step_jit if hasattr(ocp.system, "step_jit") else ocp.system.step
+
                 for k in range(ocp.horizon):
                     # Apply the gains: u_new = u_old + alpha*Kf + Kx*(x_new - x_old)
                     dx = x_new[k] - xvec[k]
                     u_new[k] = uvec[k] + alpha * Kf[k] + Kx[k] @ dx
                     
                     # Simulate physics
-                    x_new[k+1] = ocp.system.step(x_new[k], u_new[k], ocp.dt)
+                    x_new[k+1] = step_func(x_new[k], u_new[k], ocp.dt)
                     cost += ocp.stage_cost.evaluate(x_new[k], u_new[k], k)
                 
                 cost += ocp.terminal_cost.evaluate(x_new[-1])
