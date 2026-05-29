@@ -27,7 +27,7 @@ class TubeMPC:
             self.current_nominal_state = np.copy(current_state)
 
         # Solve the nominal problem
-        nominal_state, nominal_control = self.solver.run_ddp(self.nominal_problem, self.current_nominal_state, self.previous_control)
+        nominal_state, nominal_control, _ = self.solver.run_ddp(self.nominal_problem, self.current_nominal_state, self.previous_control)
 
         # Increment previous control
         self.previous_control = np.roll(nominal_control, shift=-1, axis=0)
@@ -38,7 +38,7 @@ class TubeMPC:
         self.ancillary_problem.terminal_cost.update_reference(nominal_state[-1])
 
         # Solve ancillary problem
-        ancillary_state, ancillary_control = self.solver.run_ddp(self.ancillary_problem, current_state)
+        ancillary_state, ancillary_control, _ = self.solver.run_ddp(self.ancillary_problem, current_state)
 
         # Use ideal dynamics to step nominal state forward for next iteration
         self.current_nominal_state = nominal_state[1]

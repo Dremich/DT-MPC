@@ -2,6 +2,7 @@ import time
 import numpy as np
 import jax.numpy as jnp
 
+from dynamics.dubins_car import DubinsCar # <-- Assuming this is your base system
 from dynamics.safety_embedded import SafetyEmbeddedDynamics, SafetyEmbeddedVisualizer
 from solvers.ocp_interface import OCP
 from solvers.optimal_control import DDPSolver
@@ -9,24 +10,12 @@ from solvers.tube_mpc import TubeMPC
 from solvers.costs import QuadraticCost, TerminalCost
 
 # ==================================================
-# Specific to Dubins Car (Safety-Embedded Dynamics)
+# Simulation Parameters
 # ==================================================
-
-# Simulation parameters
 dt = 0.1
 wheelbase = 0.25
 horizon = 50
-steps = 300 # Increased for larger course
-
-# Establish environment 
-# --- Original Course (Commented Out) ---
-# obstacles = np.array([
-#     [5.0, 5.0, 2.0],
-#     [3.0, 7.0, 1.0],
-#     [7.0, 3.0, 1.0],
-#     # Top-left obstacle
-#     [1.0, 9.0, 1.0],])
-# goal_state = np.array([10.0, 10.0, 0.0, 0.0]) 
+steps = 75 
 
 # --- Challenging "Forest" Course ---
 obstacles = np.array([
@@ -37,47 +26,53 @@ obstacles = np.array([
     [16.0, 22.0, 2.5], [10.0, 25.0, 1.8], [25.0, 10.0, 3.2],
     [20.0, 25.0, 1.5], [25.0, 20.0, 1.2], [5.0, 20.0, 2.0]
 ])
-goal_state = np.array([28.0, 28.0, 0.0, 0.0]) # x, y, theta, barrier_state
-# ------------------------------------
+goal_state = np.array([28.0, 28.0, 0.0, 0.0]) 
 
-car = SafetyEmbeddedDynamics(wheelbase, obstacles)
+# 1. Define the abstract constraint function
+def forest_cbf(x):
+    """Calculates distance to all obstacles. x is the base state [x, y, theta]"""
+    dists = jnp.sqrt((x[0] - obstacles[:, 0])**2 + (x[1] - obstacles[:, 1])**2)
+    return dists - obstacles[:, 2]
 
-# Initialize correct starting barrier state[cite: 13]
-init_cbf = float(car.CBF(jnp.array([0.0, 0.0])))
-initial_barrier = 1.0 / init_cbf if init_cbf > 1e-6 else 1e6
-current_state = np.array([0.0, 0.0, 0.0, initial_barrier]) # x, y, theta, barrier_state
+# 2. Instantiate the Base System and the Safety Wrapper
+base_car = DubinsCar(wheelbase=wheelbase)
+car = SafetyEmbeddedDynamics(base_system=base_car, constraint_func=forest_cbf, alpha=0.5, gamma=0.1)
 
-# Nominal MPC (Goal-Seeking & Obstacle Avoidance)
-# The 4th diagonal element penalizes the barrier state
+# 3. Initialize the correct starting barrier state dynamically
+init_base_state = jnp.array([0.0, 0.0, 0.0])
+H_init = forest_cbf(init_base_state)
+initial_barrier = float(jnp.sum(car.relaxed_barrier(H_init, car.alpha)))
+
+current_state = np.array([0.0, 0.0, 0.0, initial_barrier]) 
+
+# ==================================================
+# Controller Setup
+# ==================================================
 Q_nom = jnp.diag(jnp.array([1.0, 1.0, 0.5, 100.0]))
 R_nom = jnp.diag(jnp.array([0.1, 0.1]))
 P_nom = jnp.diag(jnp.array([100.0, 100.0, 50.0, 100.0]))
 
 nom_stage_cost = QuadraticCost(Q_nom, R_nom, x_ref=goal_state)
 nom_term_cost = TerminalCost(P_nom, x_ref=goal_state)
-
 nominal_ocp = OCP(system=car, stage_cost=nom_stage_cost, terminal_cost=nom_term_cost, horizon=horizon, dt=dt)
 
-# Ancillary MPC (Error-Tracking)
-# Heavily penalizes deviation from the nominal trajectory (elements 0-2). Barrier penalty is 0 here.
 Q_anc = jnp.diag(jnp.array([50.0, 50.0, 10.0, 0.0]))
 R_anc = jnp.diag(jnp.array([1.0, 1.0]))
 P_anc = jnp.diag(jnp.array([200.0, 200.0, 50.0, 0.0]))
 
-# No x_ref or u_ref passed initially; TubeMPC updates them dynamically
 anc_stage_cost = QuadraticCost(Q_anc, R_anc) 
 anc_term_cost = TerminalCost(P_anc)
-
 ancillary_ocp = OCP(system=car, stage_cost=anc_stage_cost, terminal_cost=anc_term_cost, horizon=horizon, dt=dt)
 
-# Establish Tube MPC
 controller = TubeMPC(nominal_ocp, ancillary_ocp, DDPSolver)
 
-# Simulation loop
-states = [current_state.copy()] # Track states for visualization
-controls = [] # Track controls for analysis
-nom_states = [] # Track nominal states for dual visualization[cite: 13]
-# Timing accumulators
+# ==================================================
+# Simulation Loop
+# ==================================================
+states = [current_state.copy()] 
+controls = [] 
+nom_states = [] 
+
 start_time = time.perf_counter()
 controller_time = 0.0
 sim_time = 0.0
@@ -85,19 +80,15 @@ step_times = []
 
 for k in range(steps):
     print(f"Step {k}: Computing OCP...")
-
     step_start = time.perf_counter()
 
-    # Obtain control from Tube MPC
     t0 = time.perf_counter()
     u = controller.step_tube(current_state)
     t1 = time.perf_counter()
     controller_time += (t1 - t0)
     
-    # Store nominal state[cite: 17]
     nom_states.append(controller.current_nominal_state.copy())
 
-    # Progress physics using the noisy simulator step[cite: 13]
     t2 = time.perf_counter()
     current_state = car.step_sim(current_state, u, dt)
     t3 = time.perf_counter()
@@ -109,12 +100,16 @@ for k in range(steps):
     states.append(current_state.copy())
     controls.append(u.copy())
 
-    # Early stopping if goal is reached
     if np.linalg.norm(current_state[0:2] - goal_state[0:2]) < 0.5:
         print(f"Goal reached at step {k}!")
         break
+    else:
+        print(f"Distance from goal: {np.linalg.norm(current_state[0:2] - goal_state[0:2]):.2f}")
+        print(f"Safety Barrier Value: {current_state[3]:.2f}")
 
-# Visualize results
+# ==================================================
+# Visualization
+# ==================================================
 states = np.array(states)
 nom_states = np.array(nom_states)
 
@@ -123,7 +118,7 @@ SafetyEmbeddedVisualizer.visualize_trajectory(
     obstacles, 
     goal_state[0:2], 
     0.5,
-    nominal_trajectory=nom_states # Pass nominal trajectory overlay[cite: 13]
+    nominal_trajectory=nom_states 
 )
 
 # Print timing summary

@@ -32,7 +32,7 @@ if __name__ == "__main__":
     guess_u = np.zeros((N, NU))
     
     # Run DDP!
-    optimal_X, optimal_U = DDPSolver.run_ddp(ocp, start_state, guess_u, max_iters=30, cost_threshold=0.5)
+    optimal_X, optimal_U, _ = DDPSolver.run_ddp(ocp, start_state, guess_u, max_iters=30, cost_threshold=0.5)
     
     # Plotting
     plt.plot(optimal_X[:, 0], optimal_X[:, 1], '-o', label='Car Path')

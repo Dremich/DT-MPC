@@ -3,6 +3,8 @@
 from abc import ABC, abstractmethod
 from typing import Tuple
 import numpy as np
+import jax
+import jax.numpy as jnp
 
 class DynamicalSystem(ABC):
     """
@@ -22,13 +24,13 @@ class DynamicalSystem(ABC):
         pass
 
     @abstractmethod
-    def dynamics(self, x: np.ndarray, u: np.ndarray) -> np.ndarray:
+    def dynamics(self, x: jnp.ndarray, u: jnp.ndarray) -> jnp.ndarray:
         """
         Computes the continuous-time derivative dx/dt = f(x, u).
         """
         pass
 
-    def step(self, x: np.ndarray, u: np.ndarray, dt: float) -> np.ndarray:
+    def step(self, x: jnp.ndarray, u: jnp.ndarray, dt: float) -> jnp.ndarray:
         """
         Integrates the dynamics forward by one time step dt.
         (Euler integration provided as default, can be overridden with RK4).
@@ -36,13 +38,13 @@ class DynamicalSystem(ABC):
         return x + self.dynamics(x, u) * dt
     
     @abstractmethod
-    def continuous_jacobians(self, x: np.ndarray, u: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    def continuous_jacobians(self, x: jnp.ndarray, u: jnp.ndarray) -> Tuple[jnp.ndarray, jnp.ndarray]:
         """
         Computes the continuous-time Jacobians A_c = df/dx and B_c = df/du.
         """
         pass
 
-    def discrete_jacobians(self, x: np.ndarray, u: np.ndarray, dt: float) -> Tuple[np.ndarray, np.ndarray]:
+    def discrete_jacobians(self, x: jnp.ndarray, u: jnp.ndarray, dt: float) -> Tuple[jnp.ndarray, jnp.ndarray]:
         """
         Converts continuous Jacobians to discrete-time Jacobians using Forward Euler integration.
         
@@ -63,7 +65,7 @@ class DynamicalSystem(ABC):
 
         A_c, B_c = self.continuous_jacobians(x, u)
         
-        A_d = np.eye(self.state_dim) + A_c * dt
+        A_d = jnp.eye(self.state_dim) + A_c * dt
         B_d = B_c * dt
         
         return A_d, B_d

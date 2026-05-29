@@ -4,42 +4,35 @@ import numpy as np
 from typing import Tuple
 
 from dynamics.base_system import DynamicalSystem
-
 jax.config.update("jax_enable_x64", True)
 
 
 class SafetyEmbeddedDynamics(DynamicalSystem):
     """
-    Dubins Car with an embedded safety (barrier) state.
-
-    State : [x, y, theta, barrier_state]   where barrier_state = 1 / CBF(x,y)
-    Control: [v, omega]  – linear and angular velocity
-
-    CBF(x,y) = min over obstacles of  dist(x,y, obs_centre) - obs_radius
-
-    step()      – JAX-traceable, deterministic; used by the DDP planner.
-    step_sim()  – NumPy, adds Gaussian process noise; used for closed-loop simulation.
+    Safety-Embedded Dynamics class: augments a base system with barrier states.
     """
+    def __init__(self, base_system, constraint_func, alpha: float = 0.5, gamma: float = 0.1, rho: float = 10.0, noise_std: float = 0.25):
+        self.base_system = base_system
+        self.constraint_func = constraint_func
+        self.alpha = alpha
+        self.gamma = gamma
+        self.rho = rho
+        self.noise_std = noise_std
+        
+        self._state_dim   = base_system.state_dim + 1   
+        self._control_dim = base_system.control_dim     
 
-    def __init__(self, wheelbase: float = 1.0, obstacles=None, noise_std: float = 0.25):
-        self._state_dim   = 4   # [x, y, theta, barrier_state]
-        self._control_dim = 2   # [v, omega]
-        self.L            = wheelbase if wheelbase is not None else 0.25
-        self.noise_std    = noise_std
-        self.obstacles    = obstacles
-
-        # Pre-convert obstacle list to a JAX array for vectorised CBF computation
-        if obstacles is not None:
-            self._obs = jnp.array(obstacles, dtype=jnp.float64)   # (M, 3)
-        else:
-            self._obs = None
-
-        # Cache JAX transformations for the discrete step
+        # Cache JAX transformations 
         self._step_jit = jax.jit(self.step)
-        self._jac_A = jax.jit(jax.jacobian(self.step, argnums=0))
-        self._jac_B = jax.jit(jax.jacobian(self.step, argnums=1))
-
-    # ---───────────────────────────────────────────────────────
+        
+        # Standard Jacobians for the DDP solver (A_d, B_d)
+        self._jac_A_c = jax.jit(jax.jacobian(self.dynamics, argnums=0))
+        self._jac_B_c = jax.jit(jax.jacobian(self.dynamics, argnums=1))
+        self._jac_A_d = jax.jit(jax.jacobian(self.step, argnums=0))
+        self._jac_B_d = jax.jit(jax.jacobian(self.step, argnums=1))
+        
+        # Learning Jacobian for Algorithm 1 (Derivative w.r.t alpha)
+        self._jac_alpha = jax.jit(jax.jacobian(self.step_for_learning, argnums=3))
 
     @property
     def state_dim(self) -> int:
@@ -49,98 +42,81 @@ class SafetyEmbeddedDynamics(DynamicalSystem):
     def control_dim(self) -> int:
         return self._control_dim
 
-    # ---───────────────────────────────────────────────────────────
-
-    def CBF(self, x: jnp.ndarray) -> jnp.ndarray:
-        """
-        Control Barrier Function value.
-        Returns the minimum signed distance to any obstacle surface.
-        JAX-traceable (no Python-level data-dependent branching).
-        """
-        if self._obs is None:
-            return jnp.array(1.0)
-        dist = jnp.sqrt((x[0] - self._obs[:, 0]) ** 2 + (x[1] - self._obs[:, 1]) ** 2) \
-               - self._obs[:, 2]
-        return jnp.min(dist)
-
-    # ---─────────────────────────────────────────────────────────
+    def relaxed_barrier(self, zeta: jnp.ndarray, alpha: float) -> jnp.ndarray:
+        safe_b = 1.0 / jnp.maximum(zeta, 1e-8) 
+        diff = zeta - alpha
+        relax_b = (1.0 / alpha) - (diff / (alpha**2)) + ((diff**2) / (alpha**3))
+        return jnp.where(zeta >= alpha, safe_b, relax_b)
 
     def dynamics(self, x: jnp.ndarray, u: jnp.ndarray) -> jnp.ndarray:
-        """
-        Deterministic continuous-time derivative  dx/dt = f(x, u).
-        JAX-traceable.  barrier_state is handled discretely in step().
-        """
-        v, omega, theta = u[0], u[1], x[2]
-        return jnp.array([
-            v * jnp.cos(theta),
-            v * jnp.sin(theta),
-            (v / self.L) * jnp.tan(omega),
-            0.0,   # barrier_state_dot updated after Euler step
-        ])
+        base_x = x[:self.base_system.state_dim]
+        base_dx = self.base_system.dynamics(base_x, u) 
+        return jnp.concatenate([base_dx, jnp.array([0.0])])
 
     def step(self, x: jnp.ndarray, u: jnp.ndarray, dt: float) -> jnp.ndarray:
-        """
-        JAX-traceable deterministic Euler step.
-        Used by DDPSolver for planning and for computing Jacobians via jax.jacobian.
-        """
-        x_new = x + self.dynamics(x, u) * dt
-        cbf   = self.CBF(x_new)
-        # Guard against zero / negative CBF (obstacle penetration)
-        barrier = jnp.where(cbf > 1e-6, 1.0 / cbf, 1e6)
-        x_new   = x_new.at[3].set(barrier)
-        return x_new
+        """Standard step for the DDP/MPC solver. Uses internal self.alpha."""
+        return self.step_for_learning(x, u, dt, self.alpha, self.rho)
+        
+    def barrier_aggregate_sum(self, H_k: jnp.ndarray, H_next: jnp.ndarray, rho: float) -> jnp.ndarray:
+        B_k = jnp.sum(self.relaxed_barrier(H_k, self.alpha))
+        B_next = jnp.sum(self.relaxed_barrier(H_next, self.alpha))
+        return B_total_k, B_total_next
+    
+    def barrier_aggregate_logsumexp(self, H_k: jnp.ndarray, H_next: jnp.ndarray, alpha: float, rho: float) -> jnp.ndarray:
+        # logsumexp computes the max, so we negate H to find the soft-minimum distance
+        min_H_k = -jax.scipy.special.logsumexp(-rho * H_k) / rho
+        min_H_next = -jax.scipy.special.logsumexp(-rho * H_next) / rho
+
+        # Now pass only the SINGLE closest distance through the relaxed barrier
+        B_total_k = self.relaxed_barrier(min_H_k, alpha)
+        B_total_next = self.relaxed_barrier(min_H_next, alpha)
+        
+        return B_total_k, B_total_next
+
+    def step_for_learning(self, x: jnp.ndarray, u: jnp.ndarray, dt: float, alpha: float, rho: float) -> jnp.ndarray:
+        """Exposes alpha explicitly so JAX can differentiate through it."""
+        base_x = x[:self.base_system.state_dim]
+        b_k = x[-1]
+
+        base_x_next = self.base_system.step(base_x, u, dt)
+        
+        H_k = self.constraint_func(base_x)
+        H_next = self.constraint_func(base_x_next)
+
+        B_total_k, B_total_next = self.barrier_aggregate_logsumexp(H_k, H_next, alpha, rho)
+
+        b_next = B_total_next - self.gamma * (B_total_k - b_k)
+        return jnp.concatenate([base_x_next, jnp.array([b_next])])
 
     def step_sim(self, x: np.ndarray, u: np.ndarray, dt: float) -> np.ndarray:
-        """
-        Noisy Euler step for closed-loop simulation.
-        Adds Gaussian process noise to the positional/heading states.
-        """
-        v, omega, theta = float(u[0]), float(u[1]), float(x[2])
-        noise = np.random.normal(0.0, self.noise_std, 3)
-        x_dot = np.array([
-            v * np.cos(theta) + noise[0],
-            v * np.sin(theta) + noise[1],
-            (v / self.L) * np.tan(omega) + noise[2],
-            0.0,
-        ])
-        x_new       = np.array(x, dtype=np.float64) + x_dot * dt
-        cbf         = float(self.CBF(jnp.array(x_new[:2])))
-        x_new[3]    = 1.0 / cbf if cbf > 1e-6 else 1e6
-        return x_new
+        """Noisy Euler step for closed-loop simulation."""
+        base_x = x[:self.base_system.state_dim]
+        b_k = x[-1]
+        
+        # Add noise to the continuous base dynamics
+        noise = np.random.normal(0.0, self.noise_std, self.base_system.state_dim)
+        base_dx = np.array(self.base_system.dynamics(base_x, u)) + noise
+        base_x_next = base_x + base_dx * dt
+        
+        # Calculate the deterministic barrier update based on the noisy state
+        H_k = self.constraint_func(jnp.array(base_x))
+        H_next = self.constraint_func(jnp.array(base_x_next))
+        
+        B_total_k = float(jnp.sum(self.relaxed_barrier(H_k, self.alpha)))
+        B_total_next = float(jnp.sum(self.relaxed_barrier(H_next, self.alpha)))
+        
+        b_next = B_total_next - self.gamma * (B_total_k - b_k)
+        return np.concatenate([base_x_next, np.array([b_next])])
 
-    # ---────────────────────────────────────────────────────────
+    def continuous_jacobians(self, x: jnp.ndarray, u: jnp.ndarray) -> Tuple[jnp.ndarray, jnp.ndarray]:
+        return self._jac_A_c(x, u), self._jac_B_c(x, u)
 
-    def continuous_jacobians(
-        self, x: jnp.ndarray, u: jnp.ndarray
-    ) -> Tuple[jnp.ndarray, jnp.ndarray]:
-        """Analytical continuous Jacobians A_c = df/dx, B_c = df/du."""
-        v, omega, theta = u[0], u[1], x[2]
-
-        A = jnp.zeros((self._state_dim, self._state_dim))
-        A = A.at[0, 2].set(-v * jnp.sin(theta))
-        A = A.at[1, 2].set( v * jnp.cos(theta))
-
-        B = jnp.zeros((self._state_dim, self._control_dim))
-        B = B.at[0, 0].set(jnp.cos(theta))
-        B = B.at[1, 0].set(jnp.sin(theta))
-        B = B.at[2, 0].set((1.0 / self.L) * jnp.tan(omega))
-        B = B.at[2, 1].set((v / self.L) / jnp.cos(omega) ** 2)
-        return A, B
-
-    def discrete_jacobians(
-        self, x: jnp.ndarray, u: jnp.ndarray, dt: float
-    ) -> Tuple[jnp.ndarray, jnp.ndarray]:
-        """
-        Exact discrete Jacobians via JAX autodiff on step().
-        Captures the barrier-state update that the analytic continuous
-        Jacobians miss.
-        """
-        A_d = self._jac_A(x, u, dt)
-        B_d = self._jac_B(x, u, dt)
-        return A_d, B_d
-
-
-# ---───────────────────────────────────────────────────────────
+    def discrete_jacobians(self, x: jnp.ndarray, u: jnp.ndarray, dt: float) -> Tuple[jnp.ndarray, jnp.ndarray]:
+        return self._jac_A_d(x, u, dt), self._jac_B_d(x, u, dt)
+        
+    def jacobian_wrt_alpha(self, x: jnp.ndarray, u: jnp.ndarray, dt: float) -> jnp.ndarray:
+        """Returns nabla_alpha f for the learning phase."""
+        return self._jac_alpha(x, u, dt, self.alpha)
 
 class SafetyEmbeddedVisualizer:
     """Utility class to visualise trajectories, obstacles, and goal regions."""

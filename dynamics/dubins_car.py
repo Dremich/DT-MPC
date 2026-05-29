@@ -1,3 +1,5 @@
+import jax
+import jax.numpy as jnp
 import numpy as np
 from typing import Tuple
 from dynamics.base_system import DynamicalSystem
@@ -32,7 +34,7 @@ class DubinsCar(DynamicalSystem):
         """Dimension of the control vector (m)."""
         return self._control_dim
 
-    def dynamics(self, x: np.ndarray, u: np.ndarray) -> np.ndarray:
+    def dynamics(self, x: jnp.ndarray, u: jnp.ndarray) -> jnp.ndarray:
         """
         Computes the continuous-time derivative dx/dt = f(x, u).
         """
@@ -40,13 +42,13 @@ class DubinsCar(DynamicalSystem):
         omega = u[1]
         theta = x[2]
 
-        x_dot = v * np.cos(theta)
-        y_dot = v * np.sin(theta)
-        theta_dot = v / self.L * np.tan(omega)
+        x_dot = v * jnp.cos(theta)
+        y_dot = v * jnp.sin(theta)
+        theta_dot = v / self.L * jnp.tan(omega)
 
-        return np.array([x_dot, y_dot, theta_dot])
+        return jnp.array([x_dot, y_dot, theta_dot])
     
-    def continuous_jacobians(self, x: np.ndarray, u: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    def continuous_jacobians(self, x: jnp.ndarray, u: jnp.ndarray) -> Tuple[jnp.ndarray, jnp.ndarray]:
         """
         Computes the continuous-time Jacobians A_c = df_c/dx and B_c = df_c/du.
         
@@ -68,22 +70,22 @@ class DubinsCar(DynamicalSystem):
                 [ (1/L) * tan(omega),    (v/L) * (1/cos^2(omega)) ]
         """
 
-        v = u[0]
-        omega = u[1]
-        theta = x[2]
+        v, omega, theta = u[0], u[1], x[2]
 
-        # Jacobian w.r.t state x
-        A = np.zeros((self.state_dim, self.state_dim))
-        A[0, 2] = -v * np.sin(theta)  # df1/dtheta
-        A[1, 2] = v * np.cos(theta)   # df2/dtheta
+        # Build the A matrix in one shot
+        A = jnp.array([
+            [0.0, 0.0, -v * jnp.sin(theta)],
+            [0.0, 0.0,  v * jnp.cos(theta)],
+            [0.0, 0.0,  0.0]
+        ])
 
-        # Jacobian w.r.t control u
-        B = np.zeros((self.state_dim, self.control_dim))
-        B[0, 0] = np.cos(theta)       # df1/dv
-        B[1, 0] = np.sin(theta)       # df2/dv
-        B[2, 0] = (1 / self.L) * np.tan(omega)  # df3/dv
-        B[2, 1] = (v / self.L) * (1 / (np.cos(omega)**2))  # df3/domega
-
+        # Build the B matrix in one shot
+        B = jnp.array([
+            [jnp.cos(theta), 0.0],
+            [jnp.sin(theta), 0.0],
+            [(1.0 / self.L) * jnp.tan(omega), (v / self.L) / (jnp.cos(omega) ** 2)]
+        ])
+        
         return A, B
 
 
