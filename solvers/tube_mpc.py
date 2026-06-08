@@ -44,3 +44,19 @@ class TubeMPC:
         self.current_nominal_state = nominal_state[1]
 
         return ancillary_control[0]
+    
+    def solve_tubempc(self, initial_state: np.ndarray):
+        """Solves the Tube-MPC problem over the entire horizon."""
+        
+        # Step 1: Solve nominal problem
+        nominal_state, nominal_control, _ = self.solver.run_ddp(self.nominal_problem, initial_state, self.previous_control)
+
+        # Step 2: Update ancillary cost with nominal trajectory
+        for t in range(self.nominal_problem.horizon):
+            self.ancillary_problem.stage_cost.update_reference(nominal_state[t], nominal_control[t])
+        self.ancillary_problem.terminal_cost.update_reference(nominal_state[-1])
+
+        # Step 3: Solve ancillary problem
+        ancillary_state, ancillary_control, _ = self.solver.run_ddp(self.ancillary_problem, initial_state)
+
+        return nominal_state, nominal_control, ancillary_state, ancillary_control

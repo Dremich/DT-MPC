@@ -1,7 +1,7 @@
 import jax
 import jax.numpy as jnp
 import numpy as np
-from typing import Tuple
+from typing import Optional, Tuple
 
 from dynamics.base_system import DynamicalSystem
 jax.config.update("jax_enable_x64", True)
@@ -53,9 +53,16 @@ class SafetyEmbeddedDynamics(DynamicalSystem):
         base_dx = self.base_system.dynamics(base_x, u) 
         return jnp.concatenate([base_dx, jnp.array([0.0])])
 
-    def step(self, x: jnp.ndarray, u: jnp.ndarray, dt: float) -> jnp.ndarray:
-        """Standard step for the DDP/MPC solver. Uses internal self.alpha."""
-        return self.step_for_learning(x, u, dt, self.alpha, self.rho)
+    def step(self, x: jnp.ndarray, u: jnp.ndarray, dt: float, params: Optional[jnp.ndarray] = None) -> jnp.ndarray:
+        """Standard step for the DDP/MPC solver."""
+        if params is None:
+            alpha = self.alpha
+            rho = self.rho
+        else:
+            alpha = params[0]  # Assuming alpha is the first parameter in the array
+            rho = params[1]    # Assuming rho is the second parameter in the array
+
+        return self.step_for_learning(x, u, dt, alpha, rho)
         
     def barrier_aggregate_sum(self, H_k: jnp.ndarray, H_next: jnp.ndarray, rho: float) -> jnp.ndarray:
         B_k = jnp.sum(self.relaxed_barrier(H_k, self.alpha))

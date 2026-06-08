@@ -13,12 +13,13 @@ class BaseCost(ABC):
     """Abstract base class for cost functions"""
 
     @abstractmethod
-    def evaluate(self, x: jnp.ndarray, u: Optional[jnp.ndarray] = None, k: Optional[int] = None) -> jnp.ndarray:
+    def evaluate(self, x: jnp.ndarray, u: Optional[jnp.ndarray] = None, k: Optional[int] = None, params: Optional[jnp.ndarray] = None) -> jnp.ndarray:
         """
         Returns scalar cost at a given state and control.
         
         u required for stage costs, optional for terminal cost.
         k is the optional timestep index for time-varying costs.
+        params is the optional parameter array for learnable costs.
         
         Output is a scalar (0D array) representing the cost (using jnp array to maintain JAX compatibility).
         """
@@ -56,7 +57,7 @@ class QuadraticCost(BaseCost):
         self.x_ref = jnp.array(x_ref) if x_ref is not None else None
         self.u_ref = jnp.array(u_ref) if u_ref is not None else None
 
-    def evaluate(self, x: jnp.ndarray, u: Optional[jnp.ndarray] = None, k: Optional[int] = None) -> jnp.ndarray:
+    def evaluate(self, x: jnp.ndarray, u: Optional[jnp.ndarray] = None, k: Optional[int] = None, params: Optional[jnp.ndarray] = None) -> jnp.ndarray:
         """
         Computes the quadratic cost at a given state and control. 
         """
@@ -103,7 +104,7 @@ class TerminalCost(BaseCost):
         self.P = P
         self.x_ref = jnp.array(x_ref) if x_ref is not None else None
 
-    def evaluate(self, x: jnp.ndarray, u: Optional[jnp.ndarray] = None, k: Optional[int] = None) -> jnp.ndarray:
+    def evaluate(self, x: jnp.ndarray, u: Optional[jnp.ndarray] = None, k: Optional[int] = None, params: Optional[jnp.ndarray] = None) -> jnp.ndarray:
         """Computes terminal cost at final state."""
         dx = x if self.x_ref is None else x - self.x_ref
         return dx.T @ self.P @ dx
