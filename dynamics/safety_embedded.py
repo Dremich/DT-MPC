@@ -11,7 +11,7 @@ class SafetyEmbeddedDynamics(DynamicalSystem):
     """
     Safety-Embedded Dynamics class: augments a base system with barrier states.
     """
-    def __init__(self, base_system, constraint_func, alpha: float = 0.5, gamma: float = 0.1, rho: float = 10.0, noise_std: float = 0.25):
+    def __init__(self, base_system, constraint_func, alpha: float = 1.5, gamma: float = 0.1, rho: float = 10.0, noise_std: float = 0.25):
         self.base_system = base_system
         self.constraint_func = constraint_func
         self.alpha = alpha
@@ -31,8 +31,10 @@ class SafetyEmbeddedDynamics(DynamicalSystem):
         self._jac_A_d = jax.jit(jax.jacobian(self.step, argnums=0))
         self._jac_B_d = jax.jit(jax.jacobian(self.step, argnums=1))
         
-        # Learning Jacobian for Algorithm 1 (Derivative w.r.t alpha)
+        # Learning Jacobians for Algorithm 1 (derivatives of f w.r.t. the
+        # barrier parameters theta = [alpha, gamma]).
         self._jac_alpha = jax.jit(jax.jacobian(self.step_for_learning, argnums=3))
+        self._jac_theta = jax.jit(jax.jacobian(self.step_for_learning, argnums=(3, 4)))
 
     @property
     def state_dim(self) -> int:
@@ -54,8 +56,8 @@ class SafetyEmbeddedDynamics(DynamicalSystem):
         return jnp.concatenate([base_dx, jnp.array([0.0])])
 
     def step(self, x: jnp.ndarray, u: jnp.ndarray, dt: float) -> jnp.ndarray:
-        """Standard step for the DDP/MPC solver. Uses internal self.alpha."""
-        return self.step_for_learning(x, u, dt, self.alpha, self.rho)
+        """Standard step for the DDP/MPC solver. Uses internal self.alpha/self.gamma."""
+        return self.step_for_learning(x, u, dt, self.alpha, self.gamma, self.rho)
         
     def barrier_aggregate_sum(self, H_k: jnp.ndarray, H_next: jnp.ndarray, rho: float) -> jnp.ndarray:
         B_k = jnp.sum(self.relaxed_barrier(H_k, self.alpha))
@@ -73,19 +75,19 @@ class SafetyEmbeddedDynamics(DynamicalSystem):
         
         return B_total_k, B_total_next
 
-    def step_for_learning(self, x: jnp.ndarray, u: jnp.ndarray, dt: float, alpha: float, rho: float) -> jnp.ndarray:
-        """Exposes alpha explicitly so JAX can differentiate through it."""
+    def step_for_learning(self, x: jnp.ndarray, u: jnp.ndarray, dt: float, alpha: float, gamma: float, rho: float) -> jnp.ndarray:
+        """Exposes alpha and gamma explicitly so JAX can differentiate through them."""
         base_x = x[:self.base_system.state_dim]
         b_k = x[-1]
 
         base_x_next = self.base_system.step(base_x, u, dt)
-        
+
         H_k = self.constraint_func(base_x)
         H_next = self.constraint_func(base_x_next)
 
         B_total_k, B_total_next = self.barrier_aggregate_logsumexp(H_k, H_next, alpha, rho)
 
-        b_next = B_total_next - self.gamma * (B_total_k - b_k)
+        b_next = B_total_next - gamma * (B_total_k - b_k)
         return jnp.concatenate([base_x_next, jnp.array([b_next])])
 
     def step_sim(self, x: np.ndarray, u: np.ndarray, dt: float) -> np.ndarray:
@@ -116,7 +118,17 @@ class SafetyEmbeddedDynamics(DynamicalSystem):
         
     def jacobian_wrt_alpha(self, x: jnp.ndarray, u: jnp.ndarray, dt: float) -> jnp.ndarray:
         """Returns nabla_alpha f for the learning phase."""
-        return self._jac_alpha(x, u, dt, self.alpha)
+        return self._jac_alpha(x, u, dt, self.alpha, self.gamma, self.rho)
+
+    def jacobian_wrt_theta(self, x: jnp.ndarray, u: jnp.ndarray, dt: float) -> jnp.ndarray:
+        """Returns f_theta = [df/d_alpha, df/d_gamma] with shape (state_dim, 2).
+
+        Column 0 is the derivative of the safety-embedded step w.r.t. alpha and
+        column 1 w.r.t. gamma. Used by the DOC forward pass (Algorithm 4) to form
+        the hypergradient nabla_theta L = sum_k f_theta_k^T delta_lambda_{k+1}.
+        """
+        jac_alpha, jac_gamma = self._jac_theta(x, u, dt, self.alpha, self.gamma, self.rho)
+        return jnp.stack([jac_alpha, jac_gamma], axis=1)
 
 class SafetyEmbeddedVisualizer:
     """Utility class to visualise trajectories, obstacles, and goal regions."""

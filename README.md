@@ -26,3 +26,9 @@ python .\tests\test_dubin_trajectory.py
 
 ## test the embedded state scene
 python .\tests\test_embedded_state.py
+
+## run DT MPC
+
+python tests/test_dt_mpc_learning.py          # FD check + forest run + plots
+
+python scripts/run_training.py                 # compact small-course demo
