@@ -91,8 +91,23 @@ class SafetyEmbeddedDynamics(DynamicalSystem):
         b_next = B_total_next - gamma * (B_total_k - b_k)
         return jnp.concatenate([base_x_next, jnp.array([b_next])])
 
-    def step_sim(self, x: np.ndarray, u: np.ndarray, dt: float) -> np.ndarray:
-        """Closed-loop simulation step using true dynamics or noisy nominal dynamics."""
+    def step_sim(
+        self,
+        x: np.ndarray,
+        u: np.ndarray,
+        dt: float,
+        noise_distribution: str = "gaussian",
+        noise_bound: float | None = None,
+    ) -> np.ndarray:
+        """Closed-loop simulation step using true dynamics or noisy nominal dynamics.
+
+        Args:
+            noise_distribution: "gaussian" uses self.noise_std as a standard
+                deviation; "uniform" draws each state perturbation from
+                [-noise_bound, noise_bound].
+            noise_bound: half-width for uniform noise. If omitted, falls back to
+                self.noise_std.
+        """
         base_x = x[:self.base_system.state_dim]
         b_k = x[-1]
         
@@ -100,17 +115,25 @@ class SafetyEmbeddedDynamics(DynamicalSystem):
             # Use the explicitly provided true dynamics base system
             base_x_next = np.array(self.true_base_system.step(base_x, u, dt))
         else:
-            # Fall back to nominal base continuous dynamics + Gaussian noise
-            noise = np.random.normal(0.0, self.noise_std, self.base_system.state_dim)
+            # Fall back to nominal base continuous dynamics + bounded disturbance.
+            if noise_distribution == "uniform":
+                bound = self.noise_std if noise_bound is None else float(noise_bound)
+                noise = np.random.uniform(-bound, bound, self.base_system.state_dim)
+            else:
+                noise = np.random.normal(0.0, self.noise_std, self.base_system.state_dim)
             base_dx = np.array(self.base_system.dynamics(base_x, u)) + noise
             base_x_next = base_x + base_dx * dt
         
         # Calculate the deterministic barrier update based on the true reached state
         H_k = self.constraint_func(jnp.array(base_x))
         H_next = self.constraint_func(jnp.array(base_x_next))
-        
-        B_total_k = float(jnp.sum(self.relaxed_barrier(H_k, self.alpha)))
-        B_total_next = float(jnp.sum(self.relaxed_barrier(H_next, self.alpha)))
+
+        # Keep simulation and planner dynamics identical in the barrier channel.
+        B_total_k, B_total_next = self.barrier_aggregate_logsumexp(
+            H_k, H_next, self.alpha, self.rho
+        )
+        B_total_k = float(B_total_k)
+        B_total_next = float(B_total_next)
         
         b_next = B_total_next - self.gamma * (B_total_k - b_k)
         return np.concatenate([base_x_next, np.array([b_next])])
