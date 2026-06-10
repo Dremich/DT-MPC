@@ -39,7 +39,7 @@ horizon = 50
 STEPS = int(os.environ.get("DTMPC_STEPS", "60"))
 ETA = float(os.environ.get("DTMPC_ETA", "0.01"))
 SHOW = os.environ.get("DTMPC_SHOW", "1") == "1"
-NOISE_STD = float(os.environ.get("DTMPC_NOISE_STD", "10.0"))
+NOISE_STD = float(os.environ.get("DTMPC_NOISE_STD", 1.0))
 
 ALPHA_0 = float(os.environ.get("DTMPC_ALPHA0", "0.3"))
 GAMMA_0 = float(os.environ.get("DTMPC_GAMMA0", "0.1"))
