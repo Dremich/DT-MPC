@@ -1,0 +1,48 @@
+==============================================================================
+DT-MPC PER-MODULE TIMING -- one train_step on the Dubins safety-embedded system
+==============================================================================
+Setting   : dt=0.05, horizon=50, noise_std=0.25, seed=0
+Window    : 5 warmup step(s) discarded (one-time XLA compile), 25 timed steps averaged.
+Modules   : one Algorithm-2 step = nominal solve (P5) + ancillary solve (P6)
+            + DOC hypergradient (Alg.1: assemble/backward/forward) + bookkeeping.
+
+------------------------------------------------------------------------------
+Detailed breakdown at horizon = 50
+------------------------------------------------------------------------------
+  Module                       mean (ms)    std (ms)   % of step
+  1. Nominal MPC (P5)         595.31   13.85       47.9%
+  2. Ancillary ref update       0.32    0.04        0.0%
+  3. Ancillary MPC (P6)       609.46   10.42       49.0%
+  4. Upper-level loss           0.13    0.02        0.0%
+  5a. DOC assemble derivs      35.26    2.83        2.8%
+  5b. DOC backward pass         1.65    0.14        0.1%
+  5c. DOC forward pass          0.41    0.01        0.0%
+     (5. DOC total)            37.32                    3.0%
+  6. theta update               0.03    0.01        0.0%
+  ------------------------------------------------------------
+  TOTAL per step             1242.70                  100.0%
+
+  Grouped:
+    Nominal solve        595.31 ms  (47.9%)
+    Ancillary solve      609.46 ms  (49.0%)
+    DOC hypergradient     37.32 ms  ( 3.0%)
+    Bookkeeping            0.48 ms  ( 0.0%)
+
+------------------------------------------------------------------------------
+Horizon sweep  (mean ms per module; how the composition scales with N)
+------------------------------------------------------------------------------
+   horizon    nominal  ancillary        DOC     book      TOTAL
+        25     503.61     517.34      19.68     0.49    1041.22
+        50     595.31     609.46      37.32     0.48    1242.70
+       100     754.79     771.23      77.11     0.47    1603.75
+
+Notes
+- The two DDP solves dominate; both scale roughly linearly with the horizon N
+  (backward Riccati + line-search rollouts are O(N)). The nominal solve has a
+  fixed goal reference so its XLA executable is reused every step; the ancillary
+  reference changes each step but keeps the same shapes, so it stays compiled.
+- The DOC hypergradient (Alg.1) is a CPU/numpy + JAX-dispatch pass; 'assemble'
+  (per-step jacobians_fn / jacobian_wrt_theta / cost derivs) is its main cost,
+  while the backward/forward Riccati recursions are small numpy loops.
+- Bookkeeping (ref update, Eq.9 loss, theta update) is negligible (<1% of a step).
+==============================================================================

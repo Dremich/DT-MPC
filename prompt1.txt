@@ -1,0 +1,3 @@
+Your first task is to run the experiments table 3,4,5 like the context, but add Trajectory length as a new benchmark. You might run multi-thread like in your context. You are allowed to edit the code to get the trajetory length. Also, please noted the difference between success and violation. In some intermediate steps, it might violate the constraints. But if it reached the goal finally, It is success.
+
+Your second task is an ablation study. You should experimenting the results that with/without the update of paremeters and the nominal MPC under default settings (dt=0.05, horizon=100, noise STD=4.0). Save the plotting results and save the quantitative results in experiment_results.txt

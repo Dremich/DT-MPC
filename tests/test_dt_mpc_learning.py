@@ -36,7 +36,7 @@ from learning.dt_mpc_loop import DTMPCTrainer
 dt = 0.1
 wheelbase = 0.25
 horizon = 50
-STEPS = int(os.environ.get("DTMPC_STEPS", "60"))
+STEPS = int(os.environ.get("DTMPC_STEPS", "200"))
 ETA = float(os.environ.get("DTMPC_ETA", "0.01"))
 SHOW = os.environ.get("DTMPC_SHOW", "1") == "1"
 

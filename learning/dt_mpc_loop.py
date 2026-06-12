@@ -23,9 +23,17 @@ class DTMPCTrainer:
         learning_rate: float = 1e-2,
         horizon_H: int = 75,
         alpha_min: float = 1e-3,
+        alpha_max: float = float("inf"),
         gamma_bounds: tuple = (-1.0, 1.0),
+        grad_clip: float = float("inf"),
         track_dims: tuple = (0, 1),
+        alpha_reg: float = 0.0,
+        alpha_anchor: float = None,
     ):
+        # grad_clip is an element-wise bound on each component of nabla_theta L
+        # used for the update step. This keeps a parameter with a very large
+        # gradient (e.g. alpha near a constraint) from starving the step budget of
+        # a parameter with a small gradient (e.g. gamma), unlike a single norm clip.
         """
         Args:
             plant: the shared SafetyEmbeddedDynamics whose [alpha, gamma] adapt.
@@ -39,6 +47,15 @@ class DTMPCTrainer:
             track_dims: base-state dimensions tracked in the loss (Eq. 9). The
                 paper's Dubins/Robotarium loss tracks position only (x, y) plus
                 the barrier magnitude, excluding orientation.
+            alpha_reg: weight lambda of an optional anchor regularizer
+                lambda*(alpha - alpha_anchor)^2 added to the upper-level objective.
+                The Eq.-9 loss ||b*||^2 is degenerate in alpha (it is minimized by
+                inflating alpha to flatten the relaxed barrier), so without a
+                counter-force alpha runs away to its cap and the barrier is relaxed
+                away. This anchor supplies that counter-force (a stand-in for the
+                paper's cost-weight co-adaptation). Default 0.0 = off.
+            alpha_anchor: target value the regularizer pulls alpha toward; defaults
+                to the plant's initial alpha.
         """
         self.plant = plant
         self.nominal_problem = nominal_problem
@@ -48,8 +65,12 @@ class DTMPCTrainer:
         self.learning_rate = learning_rate
         self.horizon_H = horizon_H
         self.alpha_min = alpha_min
+        self.alpha_max = alpha_max
         self.gamma_bounds = gamma_bounds
+        self.grad_clip = grad_clip
         self.track_dims = tuple(track_dims)
+        self.alpha_reg = float(alpha_reg)
+        self.alpha_anchor = float(alpha_anchor) if alpha_anchor is not None else float(plant.alpha)
 
         # Receding-horizon state, mirroring solvers/tube_mpc.py.
         self.current_nominal_state = None
@@ -126,10 +147,22 @@ class DTMPCTrainer:
             self.ancillary_problem, anc_x, anc_u, grad_x
         )
 
+        # Element-wise gradient clipping for the *update* (stability near
+        # constraints, where the relaxed barrier and hence dL/d_theta can become
+        # very large). The raw gradient is still reported in the diagnostics.
+        grad_update = np.clip(grad_theta, -self.grad_clip, self.grad_clip)
+
+        # Optional alpha-anchor regularizer: add d/d_alpha[ lambda*(alpha-anchor)^2 ]
+        # on top of the (clipped) data gradient. Counteracts the degenerate pull of
+        # ||b*||^2 toward ever-larger alpha (which would relax the barrier away).
+        if self.alpha_reg > 0.0:
+            grad_update = grad_update.copy()
+            grad_update[0] += 2.0 * self.alpha_reg * (self.plant.alpha - self.alpha_anchor)
+
         # 6. Projected gradient-descent step on the shared barrier parameters.
-        new_alpha = self.plant.alpha - self.learning_rate * float(grad_theta[0])
-        new_gamma = self.plant.gamma - self.learning_rate * float(grad_theta[1])
-        self.plant.alpha = float(np.clip(new_alpha, self.alpha_min, np.inf))
+        new_alpha = self.plant.alpha - self.learning_rate * float(grad_update[0])
+        new_gamma = self.plant.gamma - self.learning_rate * float(grad_update[1])
+        self.plant.alpha = float(np.clip(new_alpha, self.alpha_min, self.alpha_max))
         self.plant.gamma = float(np.clip(new_gamma, self.gamma_bounds[0], self.gamma_bounds[1]))
 
         # 7. Advance the nominal state (true state advanced by the caller).

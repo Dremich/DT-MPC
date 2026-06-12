@@ -100,14 +100,17 @@ class SafetyEmbeddedDynamics(DynamicalSystem):
         base_dx = np.array(self.base_system.dynamics(base_x, u)) + noise
         base_x_next = base_x + base_dx * dt
         
-        # Calculate the deterministic barrier update based on the noisy state
+        # Calculate the deterministic barrier update based on the noisy state.
+        # Use the same logsumexp soft-min aggregation as step_for_learning so the
+        # simulated barrier state is consistent with what the planner predicts.
         H_k = self.constraint_func(jnp.array(base_x))
         H_next = self.constraint_func(jnp.array(base_x_next))
-        
-        B_total_k = float(jnp.sum(self.relaxed_barrier(H_k, self.alpha)))
-        B_total_next = float(jnp.sum(self.relaxed_barrier(H_next, self.alpha)))
-        
-        b_next = B_total_next - self.gamma * (B_total_k - b_k)
+
+        B_total_k, B_total_next = self.barrier_aggregate_logsumexp(
+            H_k, H_next, self.alpha, self.rho
+        )
+
+        b_next = float(B_total_next) - self.gamma * (float(B_total_k) - b_k)
         return np.concatenate([base_x_next, np.array([b_next])])
 
     def continuous_jacobians(self, x: jnp.ndarray, u: jnp.ndarray) -> Tuple[jnp.ndarray, jnp.ndarray]:

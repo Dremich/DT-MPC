@@ -1,0 +1,1 @@
+In this session, you are going to experimenting on the running time of each module in one step. Use safety embedded as your dynamical system.

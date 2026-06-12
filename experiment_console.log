@@ -1,0 +1,6 @@
+    [0.025] seed 0: success=True violation=False t/step=1.424s
+    [0.025] seed 1: success=True violation=False t/step=1.831s
+    [0.025] seed 2: success=True violation=False t/step=1.290s
+    [0.025] seed 3: success=True violation=False t/step=1.820s
+    [0.025] seed 4: success=True violation=False t/step=1.237s
+    [0.025] seed 5: success=True violation=False t/step=1.320s

@@ -1,7 +1,18 @@
 {
   "permissions": {
     "allow": [
-      "Bash(python -c ' *)"
+      "Bash(*)",
+      "Bash(python -c ' *)",
+      "Bash(python -c \"import tests.test_dt_mpc_arm as t; t.finite_difference_check\\(\\)\")",
+      "Bash(DTMPC_SHOW=0 DTMPC_STEPS=90 DTMPC_ETA=0.01 python tests/test_dt_mpc_arm.py)",
+      "Bash(DTMPC_SHOW=0 DTMPC_STEPS=100 DTMPC_ETA=0.01 python tests/test_dt_mpc_arm.py)",
+      "Bash(DTMPC_SHOW=0 DTMPC_STEPS=120 DTMPC_ETA=0.01 python tests/test_dt_mpc_arm.py)",
+      "Bash(python -c \"import scripts.run_training as rt; rt.main\\(steps=8, eta=0.02\\)\")",
+      "Bash(DTMPC_ALPHA0=0.5 python -c \"import tests.test_dt_mpc_learning as t; print\\('ALPHA_0 =', t.ALPHA_0\\); t.finite_difference_check\\(\\)\")",
+      "Read(//c/Users/gjd/.claude/projects/d--workspace-DT-MPC/**)",
+      "Read(//c/Users/gjd/.claude/projects/**)",
+      "Bash(DTMPC_SEED=0 python -c \"import tests.test_dt_mpc_arm as t; t.finite_difference_check\\(\\)\")",
+      "Bash(DTMPC_SHOW=0 DTMPC_SEED=0 DTMPC_STEPS=60 python -c \"import tests.test_dt_mpc_arm as t; r=t.run_closed_loop\\(\\)\")"
     ]
   }
 }

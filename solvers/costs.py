@@ -111,8 +111,84 @@ class TerminalCost(BaseCost):
     def get_derivatives(self, x: jnp.ndarray, u: Optional[jnp.ndarray] = None, k: Optional[int] = None) -> Tuple[jnp.ndarray, Optional[jnp.ndarray], jnp.ndarray, Optional[jnp.ndarray], Optional[jnp.ndarray]]:
         """Manual derivatives for TerminalCost"""
         dx = x if self.x_ref is None else x - self.x_ref
-        
+
         phi_x = 2.0 * self.P @ dx
         phi_xx = 2.0 * self.P
-        
+
+        return phi_x, None, phi_xx, None, None
+
+
+# ==================================================================================================
+# End-effector (task-space) costs for the robot-arm system (SM5.3 / Appendix J.C).
+#
+# The cost is reparameterized in terms of a nonlinear forward-kinematics map
+# e = fk(q), where q are the joint angles (the first ``n_joints`` state dims). The
+# state layout is assumed to be the safety-embedded form [q, q_dot, b] (barrier last).
+# A Gauss-Newton Hessian (2 J^T W J, with J = de/dq) is used so the cost Hessian is
+# always PSD and stable for DDP/iLQR, matching the paper's solver.
+# ==================================================================================================
+
+class EndEffectorCost(BaseCost):
+    """Nominal stage cost: ||fk(q) - target||^2_W + q_b * b^2 + u^T R u."""
+
+    def __init__(self, fk_fn, W: jnp.ndarray, R: jnp.ndarray, target: jnp.ndarray,
+                 n_joints: int, qb: float = 0.0, jac_fn=None):
+        self.fk_fn = fk_fn
+        self.W = jnp.asarray(W)
+        self.R = jnp.asarray(R)
+        self.target = jnp.asarray(target)
+        self.n_joints = int(n_joints)
+        self.qb = float(qb)
+        self._jac = jax.jit(jax.jacobian(fk_fn)) if jac_fn is None else jac_fn
+
+    def evaluate(self, x: jnp.ndarray, u: Optional[jnp.ndarray] = None, k: Optional[int] = None) -> jnp.ndarray:
+        q = x[:self.n_joints]
+        de = self.fk_fn(q) - self.target
+        cost = de.T @ self.W @ de + self.qb * x[-1] ** 2
+        if u is not None:
+            cost = cost + u.T @ self.R @ u
+        return cost
+
+    def get_derivatives(self, x: jnp.ndarray, u: jnp.ndarray, k: Optional[int] = None) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+        nj, nx, nu = self.n_joints, x.shape[0], u.shape[0]
+        q = x[:nj]
+        de = self.fk_fn(q) - self.target
+        J = self._jac(q)                      # (3, nj)
+
+        grad_q = 2.0 * J.T @ self.W @ de
+        Hqq = 2.0 * J.T @ self.W @ J          # Gauss-Newton (PSD)
+
+        l_x = jnp.zeros(nx).at[:nj].set(grad_q).at[nx - 1].set(2.0 * self.qb * x[-1])
+        l_xx = jnp.zeros((nx, nx)).at[:nj, :nj].set(Hqq).at[nx - 1, nx - 1].set(2.0 * self.qb)
+        l_u = 2.0 * self.R @ u
+        l_uu = 2.0 * self.R
+        l_xu = jnp.zeros((nx, nu))
+        return l_x, l_u, l_xx, l_uu, l_xu
+
+
+class EndEffectorTerminalCost(BaseCost):
+    """Nominal terminal cost: ||fk(q) - target||^2_W + q_b * b^2."""
+
+    def __init__(self, fk_fn, W: jnp.ndarray, target: jnp.ndarray,
+                 n_joints: int, qb: float = 0.0, jac_fn=None):
+        self.fk_fn = fk_fn
+        self.W = jnp.asarray(W)
+        self.target = jnp.asarray(target)
+        self.n_joints = int(n_joints)
+        self.qb = float(qb)
+        self._jac = jax.jit(jax.jacobian(fk_fn)) if jac_fn is None else jac_fn
+
+    def evaluate(self, x: jnp.ndarray, u: Optional[jnp.ndarray] = None, k: Optional[int] = None) -> jnp.ndarray:
+        q = x[:self.n_joints]
+        de = self.fk_fn(q) - self.target
+        return de.T @ self.W @ de + self.qb * x[-1] ** 2
+
+    def get_derivatives(self, x: jnp.ndarray, u: Optional[jnp.ndarray] = None, k: Optional[int] = None) -> Tuple[jnp.ndarray, Optional[jnp.ndarray], jnp.ndarray, Optional[jnp.ndarray], Optional[jnp.ndarray]]:
+        nj, nx = self.n_joints, x.shape[0]
+        q = x[:nj]
+        de = self.fk_fn(q) - self.target
+        J = self._jac(q)
+
+        phi_x = jnp.zeros(nx).at[:nj].set(2.0 * J.T @ self.W @ de).at[nx - 1].set(2.0 * self.qb * x[-1])
+        phi_xx = jnp.zeros((nx, nx)).at[:nj, :nj].set(2.0 * J.T @ self.W @ J).at[nx - 1, nx - 1].set(2.0 * self.qb)
         return phi_x, None, phi_xx, None, None
