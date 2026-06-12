@@ -29,16 +29,17 @@ from solvers.optimal_control import DDPSolver
 from solvers.costs import QuadraticCost, TerminalCost
 from learning.doc_engine import DifferentiableOptimalControl
 from learning.dt_mpc_loop import DTMPCTrainer
-
+import addcopyfighandler
 # ==================================================
 # Simulation parameters (forest course, matches test_tube_w_ddp_w_barrier.py)
 # ==================================================
-dt = 0.1
+dt = 0.025
 wheelbase = 0.25
 horizon = 50
 STEPS = int(os.environ.get("DTMPC_STEPS", "200"))
 ETA = float(os.environ.get("DTMPC_ETA", "0.01"))
 SHOW = os.environ.get("DTMPC_SHOW", "1") == "1"
+NOISE_STD = float(os.environ.get("DTMPC_NOISE_STD", 1.0))
 
 ALPHA_0 = float(os.environ.get("DTMPC_ALPHA0", "0.3"))
 GAMMA_0 = float(os.environ.get("DTMPC_GAMMA0", "0.1"))
@@ -60,11 +61,11 @@ def forest_cbf(x):
     return dists - obstacles[:, 2]
 
 
-def make_setup(alpha=ALPHA_0, gamma=GAMMA_0):
+def make_setup(alpha=ALPHA_0, gamma=GAMMA_0, noise_std=NOISE_STD):
     """Builds a fresh car + nominal/ancillary OCPs (cost weights as in the tube test)."""
     base_car = DubinsCar(wheelbase=wheelbase)
     car = SafetyEmbeddedDynamics(base_system=base_car, constraint_func=forest_cbf,
-                                 alpha=alpha, gamma=gamma)
+                                 alpha=alpha, gamma=gamma, noise_std=noise_std)
 
     Q_nom = jnp.diag(jnp.array([1.0, 1.0, 0.5, 100.0]))
     R_nom = jnp.diag(jnp.array([0.1, 0.1]))
@@ -152,10 +153,10 @@ def finite_difference_check(eps=5e-3):
 # 2. Closed-loop run with theta adaptation
 # ==================================================
 def run_closed_loop():
-    print("=" * 70)
+    print("=" * 80)
     print(f"CLOSED-LOOP DT-MPC  (steps={STEPS}, eta={ETA}, "
-          f"alpha0={ALPHA_0}, gamma0={GAMMA_0})")
-    print("=" * 70)
+          f"alpha0={ALPHA_0}, gamma0={GAMMA_0}, noise_std={NOISE_STD})")
+    print("=" * 80)
 
     car, nominal_ocp, ancillary_ocp = make_setup()
     doc = DifferentiableOptimalControl()
@@ -190,6 +191,9 @@ def run_closed_loop():
               f"alpha {diag['alpha']:.4f} | gamma {diag['gamma']:+.4f} | "
               f"grad=[{g[0]:+.3e}, {g[1]:+.3e}] | loss {diag['loss']:.3f}")
 
+        if np.any(np.array(forest_cbf(current_state)) < 0.0):
+            print(f"\nCollision detected at step {k}!")
+
         if dist < 0.5:
             print(f"\nGoal reached at step {k}!")
             break
@@ -203,7 +207,12 @@ def run_closed_loop():
           f"(min {min(alpha_hist):.4f}, max {max(alpha_hist):.4f})")
     print(f"gamma: {GAMMA_0:+.4f} -> {gamma_hist[-1]:+.4f}  "
           f"(min {min(gamma_hist):+.4f}, max {max(gamma_hist):+.4f})")
-    print(f"Final barrier value: {states[-1][3]:.3f}  (finite => stayed safe)")
+    
+    if np.any(np.array(forest_cbf(states[-1])) < 0.0):
+        print("Final collision status: COLLIDED")
+    else:
+        print("Final collision status: SAFE")
+    print(f"Final barrier value: {states[-1][3]:.3f}")
 
     return {
         "states": np.array(states),

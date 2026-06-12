@@ -11,8 +11,9 @@ class SafetyEmbeddedDynamics(DynamicalSystem):
     """
     Safety-Embedded Dynamics class: augments a base system with barrier states.
     """
-    def __init__(self, base_system, constraint_func, alpha: float = 1.5, gamma: float = 0.1, rho: float = 10.0, noise_std: float = 0.25):
+    def __init__(self, base_system, constraint_func, alpha: float = 1.5, gamma: float = 0.1, rho: float = 10.0, noise_std: float = 0.25, true_base_system=None):
         self.base_system = base_system
+        self.true_base_system = true_base_system
         self.constraint_func = constraint_func
         self.alpha = alpha
         self.gamma = gamma
@@ -90,15 +91,38 @@ class SafetyEmbeddedDynamics(DynamicalSystem):
         b_next = B_total_next - gamma * (B_total_k - b_k)
         return jnp.concatenate([base_x_next, jnp.array([b_next])])
 
-    def step_sim(self, x: np.ndarray, u: np.ndarray, dt: float) -> np.ndarray:
-        """Noisy Euler step for closed-loop simulation."""
+    def step_sim(
+        self,
+        x: np.ndarray,
+        u: np.ndarray,
+        dt: float,
+        noise_distribution: str = "gaussian",
+        noise_bound: float | None = None,
+    ) -> np.ndarray:
+        """Closed-loop simulation step using true dynamics or noisy nominal dynamics.
+
+        Args:
+            noise_distribution: "gaussian" uses self.noise_std as a standard
+                deviation; "uniform" draws each state perturbation from
+                [-noise_bound, noise_bound].
+            noise_bound: half-width for uniform noise. If omitted, falls back to
+                self.noise_std.
+        """
         base_x = x[:self.base_system.state_dim]
         b_k = x[-1]
         
-        # Add noise to the continuous base dynamics
-        noise = np.random.normal(0.0, self.noise_std, self.base_system.state_dim)
-        base_dx = np.array(self.base_system.dynamics(base_x, u)) + noise
-        base_x_next = base_x + base_dx * dt
+        if self.true_base_system is not None:
+            # Use the explicitly provided true dynamics base system
+            base_x_next = np.array(self.true_base_system.step(base_x, u, dt))
+        else:
+            # Fall back to nominal base continuous dynamics + bounded disturbance.
+            if noise_distribution == "uniform":
+                bound = self.noise_std if noise_bound is None else float(noise_bound)
+                noise = np.random.uniform(-bound, bound, self.base_system.state_dim)
+            else:
+                noise = np.random.normal(0.0, self.noise_std, self.base_system.state_dim)
+            base_dx = np.array(self.base_system.dynamics(base_x, u)) + noise
+            base_x_next = base_x + base_dx * dt
         
         # Calculate the deterministic barrier update based on the noisy state.
         # Use the same logsumexp soft-min aggregation as step_for_learning so the
@@ -144,6 +168,7 @@ class SafetyEmbeddedVisualizer:
         goal_radius: float = 0.25,
         figsize=(8, 8),
         nominal_trajectory=None,
+        filename: str = None,
     ) -> None:
         import matplotlib.pyplot as plt
         from matplotlib.patches import Circle
@@ -182,7 +207,12 @@ class SafetyEmbeddedVisualizer:
         ax.legend()
         ax.set_title("Safety-Embedded Dubins Car Trajectory")
         plt.tight_layout()
-        plt.show()
+        
+        if filename is not None:
+            plt.savefig(filename)
+            plt.close()
+        else:
+            plt.show()
 
     @staticmethod
     def visualize_multiple_trajectories(
@@ -192,14 +222,35 @@ class SafetyEmbeddedVisualizer:
         goal_radius: float = 0.25,
         figsize=(8, 8),
         nominal_trajectories=None,
+        filename: str = None,
+        labels=None,
+        alphas_list=None,
+        gammas_list=None,
     ) -> None:
         import matplotlib.pyplot as plt
         from matplotlib.patches import Circle
         from matplotlib.cm import get_cmap
 
-        _, ax = plt.subplots(figsize=figsize)
-        ax.set_aspect("equal")
+        has_params = alphas_list is not None and gammas_list is not None
+        if has_params:
+            fig, axs = plt.subplots(
+                2,
+                1,
+                figsize=(figsize[0], figsize[1] + 1.5),
+                gridspec_kw={"height_ratios": [3.8, 1.0], "hspace": 0.15},
+            )
+            ax = axs[0]
+            ax_alpha = axs[1]
+            ax_gamma = ax_alpha.twinx()
+            alpha_color = "C0"
+            gamma_color = "C1"
+        else:
+            fig, ax = plt.subplots(figsize=figsize)
+            ax_alpha = ax_gamma = None
+            alpha_color = None
+            gamma_color = None
 
+        ax.set_aspect("equal")
         cmap = get_cmap("tab10")
         n = len(trajectories)
 
@@ -208,14 +259,29 @@ class SafetyEmbeddedVisualizer:
             if traj.size == 0:
                 continue
             color = cmap(i % 10)
-            ax.plot(traj[:, 0], traj[:, 1], "-", color=color, linewidth=1.5, alpha=0.8, label=f"Run {i + 1}")
+            label = labels[i] if labels is not None and i < len(labels) else f"Run {i + 1}"
+            
+            # Primary Trajectory
+            ax.plot(traj[:, 0], traj[:, 1], "-", color=color, linewidth=1.5, alpha=0.9, label=label)
             ax.plot(traj[0, 0], traj[0, 1], "o", color=color, markersize=6)
             ax.plot(traj[-1, 0], traj[-1, 1], "s", color=color, markersize=6)
 
+            # Nominal Trajectory underneath with dashed lines, matching color 
             if nominal_trajectories is not None and i < len(nominal_trajectories):
                 nom = np.asarray(nominal_trajectories[i])
                 if nom.size > 0:
-                    ax.plot(nom[:, 0], nom[:, 1], "--", color=color, linewidth=1.0, alpha=0.4)
+                    ax.plot(nom[:, 0], nom[:, 1], "--", color=color, linewidth=1.0, alpha=0.5)
+
+            # Plot parameters if requested
+            if has_params:
+                if i < len(alphas_list) and alphas_list[i] is not None:
+                    arr_a = np.asarray(alphas_list[i])
+                    if arr_a.size > 0:
+                        ax_alpha.plot(arr_a, color=alpha_color, linewidth=1.8, alpha=0.9, label=label)
+                if i < len(gammas_list) and gammas_list[i] is not None:
+                    arr_g = np.asarray(gammas_list[i])
+                    if arr_g.size > 0:
+                        ax_gamma.plot(arr_g, "--", color=gamma_color, linewidth=1.8, alpha=0.9, label=label)
 
         for obs in np.asarray(obstacles):
             ax.add_patch(Circle((obs[0], obs[1]), obs[2], color="red", alpha=0.4))
@@ -229,5 +295,23 @@ class SafetyEmbeddedVisualizer:
         ax.grid(True, alpha=0.3)
         ax.legend()
         ax.set_title(f"Safety-Embedded Dubins Car — {n} Runs")
-        plt.tight_layout()
-        plt.show()
+
+        if has_params:
+            ax_alpha.set_title("Barrier Parameters over Steps")
+            ax_alpha.set_ylabel("Alpha (Relaxation)", color="C0")
+            ax_alpha.tick_params(axis='y', labelcolor="C0")
+            ax_alpha.grid(True, alpha=0.3)
+            ax_alpha.set_xlabel("Step")
+            
+            ax_gamma.set_ylabel("Gamma (Barrier Feedback)", color="C1")
+            ax_gamma.tick_params(axis='y', labelcolor="C1")
+            ax_gamma.spines["right"].set_color("C1")
+            
+            fig.subplots_adjust(top=0.95, bottom=0.08, left=0.10, right=0.90, hspace=0.15)
+
+        if filename is not None:
+            plt.savefig(filename)
+            plt.close()
+        else:
+            plt.show()
+

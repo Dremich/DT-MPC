@@ -1,0 +1,272 @@
+"""Run static vs learning tube-MPC over many disturbed rollouts.
+
+This experiment mirrors the structure in z_experiments/run_experiments.py and
+compares two tube-based controllers under the same disturbance model:
+
+- Static DT-MPC (learning_rate=0.0)
+- Learning DT-MPC (learning_rate>0)
+
+Each rollout uses true dynamics with per-step, per-state uniform disturbances in
+[-0.05, 0.05], then all trajectories are overlaid in a single plot.
+"""
+
+import argparse
+import os
+from time import perf_counter
+
+import jax.numpy as jnp
+import matplotlib.pyplot as plt
+import numpy as np
+from matplotlib.patches import Circle
+
+from dynamics.dubins_car import DubinsCar
+from dynamics.safety_embedded import SafetyEmbeddedDynamics
+from learning.doc_engine import DifferentiableOptimalControl
+from learning.dt_mpc_loop import DTMPCTrainer
+from solvers.costs import QuadraticCost, TerminalCost
+from solvers.ocp_interface import OCP
+from solvers.optimal_control import DDPSolver
+
+
+os.makedirs("figures", exist_ok=True)
+
+
+class UniformDisturbedDubinsCar(DubinsCar):
+    """True dynamics model with additive uniform disturbance in continuous-time rates."""
+
+    def __init__(self, wheelbase: float = 0.25, dmin: float = -0.05, dmax: float = 0.05, seed: int = 0):
+        super().__init__(wheelbase=wheelbase)
+        self.dmin = float(dmin)
+        self.dmax = float(dmax)
+        self.rng = np.random.default_rng(seed)
+
+    def step(self, x, u, dt):
+        disturbance = self.rng.uniform(self.dmin, self.dmax, size=self.state_dim)
+        dx = np.array(self.dynamics(x, u), dtype=float) + disturbance
+        return jnp.array(np.array(x, dtype=float) + dx * dt)
+
+
+def cbf_factory(obs_array: np.ndarray):
+    def cbf(x):
+        dists = jnp.sqrt((x[0] - obs_array[:, 0]) ** 2 + (x[1] - obs_array[:, 1]) ** 2)
+        return dists - obs_array[:, 2]
+
+    return cbf
+
+
+def make_nominal_ancillary(car, goal_state, horizon=50, dt=0.05):
+    q_nom = jnp.diag(jnp.array([1.0, 1.0, 0.5, 100.0]))
+    r_nom = jnp.diag(jnp.array([0.1, 0.1]))
+    p_nom = jnp.diag(jnp.array([100.0, 100.0, 50.0, 100.0]))
+    nominal_ocp = OCP(
+        system=car,
+        stage_cost=QuadraticCost(q_nom, r_nom, x_ref=goal_state),
+        terminal_cost=TerminalCost(p_nom, x_ref=goal_state),
+        horizon=horizon,
+        dt=dt,
+    )
+
+    q_anc = jnp.diag(jnp.array([50.0, 50.0, 10.0, 0.0]))
+    r_anc = jnp.diag(jnp.array([1.0, 1.0]))
+    p_anc = jnp.diag(jnp.array([200.0, 200.0, 50.0, 0.0]))
+    ancillary_ocp = OCP(
+        system=car,
+        stage_cost=QuadraticCost(q_anc, r_anc),
+        terminal_cost=TerminalCost(p_anc),
+        horizon=horizon,
+        dt=dt,
+    )
+    return nominal_ocp, ancillary_ocp
+
+
+def get_initial_state(car, cbf_fn, start_tuple):
+    base = jnp.array([start_tuple[0], start_tuple[1], start_tuple[2]])
+    b0 = float(jnp.sum(car.relaxed_barrier(cbf_fn(base), car.alpha)))
+    return np.array([base[0], base[1], base[2], b0], dtype=float)
+
+
+def run_episode(
+    controller_type: str,
+    obstacles: np.ndarray,
+    goal_state: np.ndarray,
+    start_state: tuple[float, float, float],
+    steps: int,
+    dt: float,
+    horizon: int,
+    learning_rate: float,
+    seed: int,
+):
+    np.random.seed(seed)
+    cbf = cbf_factory(obstacles)
+
+    true_sys = UniformDisturbedDubinsCar(
+        wheelbase=0.25,
+        dmin=-0.05,
+        dmax=0.05,
+        seed=seed,
+    )
+
+    base_car = DubinsCar(wheelbase=0.25)
+    car = SafetyEmbeddedDynamics(
+        base_system=base_car,
+        constraint_func=cbf,
+        alpha=0.3,
+        gamma=0.1,
+        noise_std=0.0,
+        true_base_system=true_sys,
+    )
+
+    nominal_ocp, ancillary_ocp = make_nominal_ancillary(car, goal_state, horizon=horizon, dt=dt)
+    trainer = DTMPCTrainer(
+        car,
+        nominal_ocp,
+        ancillary_ocp,
+        DDPSolver,
+        DifferentiableOptimalControl(),
+        learning_rate=learning_rate,
+        horizon_H=steps,
+    )
+
+    current_state = get_initial_state(car, cbf, start_state)
+    states = [current_state.copy()]
+    status = "TIMEOUT"
+
+    t0 = perf_counter()
+    for _ in range(steps):
+        trainer.learning_rate = learning_rate if controller_type == "learning" else 0.0
+        u, _ = trainer.train_step(current_state)
+        current_state = car.step_sim(current_state, u, dt=dt)
+        states.append(current_state.copy())
+
+        if np.any(np.array(cbf(current_state)) < 0.0):
+            status = "COLLIDED"
+            break
+
+        if np.linalg.norm(current_state[0:2] - goal_state[0:2]) < 0.5:
+            status = "GOAL_REACHED"
+            break
+
+    elapsed = perf_counter() - t0
+    return {
+        "status": status,
+        "steps_taken": len(states) - 1,
+        "time_s": elapsed,
+        "states": np.array(states),
+    }
+
+
+def plot_all_trajectories(
+    static_results,
+    learning_results,
+    obstacles,
+    goal_state,
+    start_state,
+    out_path,
+):
+    fig, ax = plt.subplots(figsize=(9, 9))
+    ax.set_aspect("equal")
+
+    for i, res in enumerate(static_results):
+        traj = res["states"]
+        label = "Static Tube-MPC" if i == 0 else None
+        ax.plot(traj[:, 0], traj[:, 1], color="#1f77b4", alpha=0.45, linewidth=1.3, label=label)
+
+    for i, res in enumerate(learning_results):
+        traj = res["states"]
+        label = "Learning Tube-MPC" if i == 0 else None
+        ax.plot(traj[:, 0], traj[:, 1], color="#ff7f0e", alpha=0.45, linewidth=1.3, label=label)
+
+    for obs in obstacles:
+        ax.add_patch(Circle((obs[0], obs[1]), obs[2], color="red", alpha=0.35))
+
+    ax.plot(start_state[0], start_state[1], marker="o", color="black", markersize=7, label="Start")
+    ax.plot(goal_state[0], goal_state[1], marker="*", color="green", markersize=12, label="Goal")
+    ax.add_patch(Circle((goal_state[0], goal_state[1]), 0.5, color="green", alpha=0.20))
+
+    ax.set_title("25 Static vs 25 Learning Tube-MPC Trajectories")
+    ax.set_xlabel("x")
+    ax.set_ylabel("y")
+    ax.grid(True, alpha=0.3)
+    ax.legend()
+
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=140)
+    plt.close(fig)
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Static vs learning tube-MPC multi-trajectory experiment")
+    parser.add_argument("--num-runs", type=int, default=25, help="Number of runs per controller")
+    parser.add_argument("--steps", type=int, default=80, help="Max closed-loop steps per run")
+    parser.add_argument("--horizon", type=int, default=50, help="DDP horizon")
+    parser.add_argument("--dt", type=float, default=0.05, help="Integration step")
+    parser.add_argument("--learning-rate", type=float, default=0.01, help="Learning rate for DT-MPC")
+    parser.add_argument("--seed", type=int, default=42, help="Base random seed")
+    args = parser.parse_args()
+
+    centers = np.array(
+        [
+            [2.0, 4.0],
+            [4.0, 2.0],
+            [4.0, 8.0],
+            [6.0, 6.0],
+            [8.0, 4.0],
+        ],
+        dtype=float,
+    )
+    radii = np.full((centers.shape[0], 1), 1.0, dtype=float)
+    obstacles = np.hstack([centers, radii])
+
+    start_state = (0.0, 0.0, float(np.pi / 4.0))
+    goal_state = np.array([10.0, 10.0, 0.0, 0.0], dtype=float)
+
+    static_results = []
+    learning_results = []
+
+    print("Running static tube-MPC rollouts...")
+    for i in range(args.num_runs):
+        res = run_episode(
+            controller_type="static",
+            obstacles=obstacles,
+            goal_state=goal_state,
+            start_state=start_state,
+            steps=args.steps,
+            dt=args.dt,
+            horizon=args.horizon,
+            learning_rate=0.0,
+            seed=args.seed + i,
+        )
+        static_results.append(res)
+        print(f"  Static {i + 1:02d}/{args.num_runs}: {res['status']:<12} steps={res['steps_taken']:3d}")
+
+    print("Running learning tube-MPC rollouts...")
+    for i in range(args.num_runs):
+        res = run_episode(
+            controller_type="learning",
+            obstacles=obstacles,
+            goal_state=goal_state,
+            start_state=start_state,
+            steps=args.steps,
+            dt=args.dt,
+            horizon=args.horizon,
+            learning_rate=args.learning_rate,
+            seed=args.seed + 1000 + i,
+        )
+        learning_results.append(res)
+        print(f"  Learning {i + 1:02d}/{args.num_runs}: {res['status']:<12} steps={res['steps_taken']:3d}")
+
+    out_path = "figures/static_vs_learning_tube_mpc_25x2.png"
+    plot_all_trajectories(
+        static_results=static_results,
+        learning_results=learning_results,
+        obstacles=obstacles,
+        goal_state=goal_state,
+        start_state=start_state,
+        out_path=out_path,
+    )
+
+    print(f"Saved trajectory comparison figure to {out_path}")
+
+
+if __name__ == "__main__":
+    main()

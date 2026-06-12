@@ -1,0 +1,29 @@
+=== Baseline Comparison (forest, wind) ===
+[LEARNING] Status: GOAL_REACHED | Steps: 34 | Time: 58.18s | Final alpha: 0.300 | Final gamma: -0.153
+[STATIC] Status: GOAL_REACHED | Steps: 34 | Time: 55.47s | Final alpha: 0.300 | Final gamma: 0.100
+[NOMINAL] Status: TIMEOUT | Steps: 60 | Time: 45.33s | Final alpha: 0.300 | Final gamma: 0.100
+
+=== Baseline Comparison (forest2, wind) ===
+[LEARNING] Status: COLLIDED | Steps: 15 | Time: 24.05s | Final alpha: 4.187 | Final gamma: -0.196
+[STATIC] Status: COLLIDED | Steps: 19 | Time: 30.20s | Final alpha: 0.300 | Final gamma: 0.100
+[NOMINAL] Status: TIMEOUT | Steps: 60 | Time: 46.07s | Final alpha: 0.300 | Final gamma: 0.100
+
+=== Baseline Comparison (narrow, wind) ===
+[LEARNING] Status: GOAL_REACHED | Steps: 14 | Time: 22.23s | Final alpha: 0.300 | Final gamma: -0.156
+[STATIC] Status: GOAL_REACHED | Steps: 14 | Time: 21.89s | Final alpha: 0.300 | Final gamma: 0.100
+[NOMINAL] Status: TIMEOUT | Steps: 60 | Time: 46.70s | Final alpha: 0.300 | Final gamma: 0.100
+
+=== Baseline Comparison (narrow, mismatch) ===
+[LEARNING] Status: GOAL_REACHED | Steps: 27 | Time: 42.48s | Final alpha: 0.300 | Final gamma: -0.167
+[STATIC] Status: GOAL_REACHED | Steps: 27 | Time: 41.64s | Final alpha: 0.300 | Final gamma: 0.100
+[NOMINAL] Status: GOAL_REACHED | Steps: 32 | Time: 23.47s | Final alpha: 0.300 | Final gamma: 0.100
+
+=== Baseline Comparison (narrow, mismatch) ===
+[LEARNING] Status: GOAL_REACHED | Steps: 27 | Time: 42.01s | Final alpha: 0.300 | Final gamma: -0.167
+[STATIC] Status: GOAL_REACHED | Steps: 27 | Time: 42.41s | Final alpha: 0.300 | Final gamma: 0.100
+[NOMINAL] Status: GOAL_REACHED | Steps: 32 | Time: 24.09s | Final alpha: 0.300 | Final gamma: 0.100
+
+=== Baseline Comparison (narrow, mismatch) ===
+[LEARNING] Status: GOAL_REACHED | Steps: 27 | Time: 42.89s | Final alpha: 0.300 | Final gamma: -0.167
+[STATIC] Status: GOAL_REACHED | Steps: 27 | Time: 43.51s | Final alpha: 0.300 | Final gamma: 0.100
+[NOMINAL] Status: GOAL_REACHED | Steps: 32 | Time: 25.62s | Final alpha: 0.300 | Final gamma: 0.100
