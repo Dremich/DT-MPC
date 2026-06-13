@@ -110,13 +110,13 @@ def cbf_factory(obs_array):
 def make_nominal_ancillary(car, goal_state, horizon=50, dt=0.1):
     Q_nom = jnp.diag(jnp.array([1.0, 1.0, 0.5, 100.0]))
     R_nom = jnp.diag(jnp.array([0.1, 0.1]))
-    P_nom = jnp.diag(jnp.array([100.0, 100.0, 50.0, 100.0]))
+    P_nom = jnp.diag(jnp.array([100.0, 100.0, 50.0, 0.0]))
     nominal_ocp = OCP(system=car,
                       stage_cost=QuadraticCost(Q_nom, R_nom, x_ref=goal_state),
                       terminal_cost=TerminalCost(P_nom, x_ref=goal_state),
                       horizon=horizon, dt=dt)
 
-    Q_anc = jnp.diag(jnp.array([50.0, 50.0, 10.0, 0.0]))
+    Q_anc = jnp.diag(jnp.array([50.0, 50.0, 10.0, 100.0]))
     R_anc = jnp.diag(jnp.array([1.0, 1.0]))
     P_anc = jnp.diag(jnp.array([200.0, 200.0, 50.0, 0.0]))
     ancillary_ocp = OCP(system=car,
@@ -136,7 +136,7 @@ def run_episode(
     controller_type="learning", # "learning", "static", "pure_nominal"
     learning_rate=0.01,      # 0.0 for static baselines
     noise_std=0.25,          # standard noise multiplier
-    noise_distribution="gaussian", # "gaussian" or "uniform"
+    noise_distribution="uniform", # "gaussian" or "uniform"
     noise_bound=None,        # half-width for uniform noise
     wheelbase=0.25,           # true system wheelbase (only for mismatch scenario)
     gust_force=(0.0, -5.0, 0.0), # only for wind scenario
@@ -398,7 +398,7 @@ if __name__ == "__main__":
     
     # # 1. Narrow Passageway
 
-    experiment_uniform_noise_sweep("forest2", noise_bounds=(0.1, 0.5, 1.0, 5.0), episodes=3, dt=0.05, steps=60, controller_type="learning", test_str="learning")
+    ## experiment_uniform_noise_sweep("forest2", noise_bounds=[5.0], episodes=5, dt=0.05, steps=60, controller_type="learning", test_str="learning")
     # experiment_baselines("narrow", "nominal", noise_std=2.0, dt=0.05, steps=40)
     # experiment_baselines("narrow", "nominal", noise_std=0.0, dt=0.05, steps=40, test_str="no_noise", plot_learning=False)
     # experiment_baselines("narrow", "nominal", noise_std=0.25, dt=0.05, steps=40, test_str="n025", plot_learning=False)
@@ -413,17 +413,17 @@ if __name__ == "__main__":
     # experiment_baselines("forest2", "nominal", noise_std=1.0, dt=0.05, seed=50, test_str="seed50_noise1", steps=80) # High noise case
 
     # # 2. Wind Gust
-    # experiment_baselines("forest2", "wind", gust_force=(0.0, -0.5, 0.0), dt=0.05, test_str="d05", steps=80)
-    # experiment_baselines("forest2", "wind", gust_force=(0.0, -1.0, 0.0), dt=0.05, test_str="d1", steps=80)
-    # experiment_baselines("forest2", "wind", gust_force=(0.0, -5.0, 0.0), dt=0.05, test_str="d5", steps=80)
+    ## experiment_baselines("forest2", "wind", gust_force=(0.0, -0.5, 0.0), dt=0.05, test_str="d05", steps=80)
+    ## experiment_baselines("forest2", "wind", gust_force=(0.0, -1.0, 0.0), dt=0.05, test_str="d1", steps=80)
+    ## experiment_baselines("forest2", "wind", gust_force=(0.0, -5.0, 0.0), dt=0.05, test_str="d5", steps=80)
     # experiment_baselines("forest", "wind", noise_std=0.0, dt=0.05)
     # experiment_baselines("forest2", "wind", noise_std=0.0, dt=0.05)
     # experiment_baselines("narrow", "wind", noise_std=0.0, dt=0.05, gust_force=(0.0, -50.0, 0.0), test_str="gust_d50", steps=80)
 
     # 3. Model Mismatch
-    # experiment_baselines("narrow", "mismatch", noise_std=0.0, dt=0.025, wheelbase=0.3, test_str="wb03")
-    # experiment_baselines("narrow", "mismatch", noise_std=0.0, dt=0.025, wheelbase=0.4, test_str="wb04")
-    # experiment_baselines("narrow", "mismatch", noise_std=0.0, dt=0.025, wheelbase=0.5, test_str="wb05")
+    ## experiment_baselines("narrow", "mismatch", noise_std=0.0, dt=0.025, wheelbase=0.3, test_str="wb03")
+    ## experiment_baselines("narrow", "mismatch", noise_std=0.0, dt=0.025, wheelbase=0.4, test_str="wb04")
+    ## experiment_baselines("narrow", "mismatch", noise_std=0.0, dt=0.025, wheelbase=0.5, test_str="wb05")
     
     # 4. Large Noise
     # experiment_baselines("forest", "nominal", noise_std=0.5, dt=0.025)
@@ -433,6 +433,6 @@ if __name__ == "__main__":
 
     
     # 5. Multi-run and Transfer
-    # experiment_multirun("forest", episodes=3, dt=0.05)
+    experiment_multirun("forest", episodes=3, dt=0.05)
     # experiment_transfer_learning(dt = 0.05)
 

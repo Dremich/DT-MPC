@@ -21,7 +21,7 @@ class SafetyEmbeddedDynamics(DynamicalSystem):
         self.noise_std = noise_std
         
         self._state_dim   = base_system.state_dim + 1   
-        self._control_dim = base_system.control_dim     
+        self._control_dim = base_system.control_dim
 
         # Cache JAX transformations 
         self._step_jit = jax.jit(self.step)

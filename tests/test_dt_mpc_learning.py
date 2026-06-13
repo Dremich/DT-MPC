@@ -33,13 +33,13 @@ import addcopyfighandler
 # ==================================================
 # Simulation parameters (forest course, matches test_tube_w_ddp_w_barrier.py)
 # ==================================================
-dt = 0.025
+dt = 0.05
 wheelbase = 0.25
 horizon = 50
 STEPS = int(os.environ.get("DTMPC_STEPS", "60"))
 ETA = float(os.environ.get("DTMPC_ETA", "0.01"))
 SHOW = os.environ.get("DTMPC_SHOW", "1") == "1"
-NOISE_STD = float(os.environ.get("DTMPC_NOISE_STD", 1.0))
+NOISE_STD = float(os.environ.get("DTMPC_NOISE_STD", 2.5))
 
 ALPHA_0 = float(os.environ.get("DTMPC_ALPHA0", "0.3"))
 GAMMA_0 = float(os.environ.get("DTMPC_GAMMA0", "0.1"))
@@ -75,9 +75,9 @@ def make_setup(alpha=ALPHA_0, gamma=GAMMA_0, noise_std=NOISE_STD):
                       terminal_cost=TerminalCost(P_nom, x_ref=goal_state),
                       horizon=horizon, dt=dt)
 
-    Q_anc = jnp.diag(jnp.array([50.0, 50.0, 10.0, 0.0]))
+    Q_anc = jnp.diag(jnp.array([50.0, 50.0, 10.0, 100.0]))
     R_anc = jnp.diag(jnp.array([1.0, 1.0]))
-    P_anc = jnp.diag(jnp.array([200.0, 200.0, 50.0, 0.0]))
+    P_anc = jnp.diag(jnp.array([200.0, 200.0, 50.0, 200.0]))
     ancillary_ocp = OCP(system=car,
                         stage_cost=QuadraticCost(Q_anc, R_anc),
                         terminal_cost=TerminalCost(P_anc),
