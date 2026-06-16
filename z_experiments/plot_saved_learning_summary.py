@@ -123,12 +123,14 @@ def plot_learning_summary(bundle, selected_indices, out_path):
     value_ax.set_xlabel("Closed-loop step")
     value_ax.set_ylabel("alpha")
     value_gamma_ax.set_ylabel("gamma")
+    value_ax.set_yscale("log")
     value_ax.grid(True, alpha=0.25)
 
     grad_ax.set_title("Hypergradients")
     grad_ax.set_xlabel("Closed-loop step")
     grad_ax.set_ylabel(r"$\partial L / \partial \alpha$")
     grad_gamma_ax.set_ylabel(r"$\partial L / \partial \gamma$")
+    grad_ax.set_yscale("log")
     grad_ax.grid(True, alpha=0.25)
 
     style_handles = [
@@ -140,6 +142,7 @@ def plot_learning_summary(bundle, selected_indices, out_path):
     axes[2].set_title("Upper-Level Loss")
     axes[2].set_xlabel("Closed-loop step")
     axes[2].set_ylabel("Loss")
+    axes[2].set_yscale("log")
     axes[2].grid(True, alpha=0.25)
 
     fig.tight_layout()

@@ -39,7 +39,7 @@ horizon = 50
 STEPS = int(os.environ.get("DTMPC_STEPS", "60"))
 ETA = float(os.environ.get("DTMPC_ETA", "0.01"))
 SHOW = os.environ.get("DTMPC_SHOW", "1") == "1"
-NOISE_STD = float(os.environ.get("DTMPC_NOISE_STD", 2.5))
+NOISE_STD = float(os.environ.get("DTMPC_NOISE_STD", 5.0))
 
 ALPHA_0 = float(os.environ.get("DTMPC_ALPHA0", "0.3"))
 GAMMA_0 = float(os.environ.get("DTMPC_GAMMA0", "0.1"))
@@ -69,7 +69,7 @@ def make_setup(alpha=ALPHA_0, gamma=GAMMA_0, noise_std=NOISE_STD):
 
     Q_nom = jnp.diag(jnp.array([1.0, 1.0, 0.5, 100.0]))
     R_nom = jnp.diag(jnp.array([0.1, 0.1]))
-    P_nom = jnp.diag(jnp.array([100.0, 100.0, 50.0, 100.0]))
+    P_nom = jnp.diag(jnp.array([100.0, 100.0, 50.0, 0.0]))
     nominal_ocp = OCP(system=car,
                       stage_cost=QuadraticCost(Q_nom, R_nom, x_ref=goal_state),
                       terminal_cost=TerminalCost(P_nom, x_ref=goal_state),
@@ -77,7 +77,7 @@ def make_setup(alpha=ALPHA_0, gamma=GAMMA_0, noise_std=NOISE_STD):
 
     Q_anc = jnp.diag(jnp.array([50.0, 50.0, 10.0, 100.0]))
     R_anc = jnp.diag(jnp.array([1.0, 1.0]))
-    P_anc = jnp.diag(jnp.array([200.0, 200.0, 50.0, 200.0]))
+    P_anc = jnp.diag(jnp.array([200.0, 200.0, 50.0, 0.0]))
     ancillary_ocp = OCP(system=car,
                         stage_cost=QuadraticCost(Q_anc, R_anc),
                         terminal_cost=TerminalCost(P_anc),
